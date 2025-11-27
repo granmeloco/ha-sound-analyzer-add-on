@@ -1,6 +1,12 @@
 #!/usr/bin/with-contenv bashio
 set -euo pipefail
 
+# --- Supervisor API Token (für Sensor/Device-Registration via HA) ---
+if [ -f /var/run/s6/container_environment/SUPERVISOR_TOKEN ]; then
+  export SUPERVISOR_TOKEN="$(cat /var/run/s6/container_environment/SUPERVISOR_TOKEN)"
+  echo "[wp-audio] SUPERVISOR_TOKEN set for API access"
+fi
+
 # --- Konfiguration ---
 MQTT_HOST="$(bashio::config 'mqtt_host')"
 MQTT_PORT="$(bashio::config 'mqtt_port')"
