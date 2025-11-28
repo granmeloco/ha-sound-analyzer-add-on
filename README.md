@@ -17,6 +17,33 @@ This is all managed using a dedicated html site which can be incorporated into H
 ## INSTALLATION  
 Use Home Assistant´s default installation of Add-ons and search for "HA-Audio-Analyzer-Add-on" and define according settings.
 
+**Automatic Version Bumping**
+
+- **What it does:** A local pre-commit hook is provided that automatically increments the patch `version` in `config.yaml` every time you commit locally. This keeps the add-on `version` up-to-date so Supervisor will detect updates.
+- **Files added:** `scripts/bump_version.py` and a `githooks/pre-commit` hook. Helper scripts `scripts/setup_hooks.sh` and `scripts/setup_hooks.ps1` configure your repository to use the `githooks` folder for Git hooks.
+- **Enable locally (one-time):**
+
+	- On Windows (PowerShell):
+
+		```powershell
+		.\scripts\setup_hooks.ps1
+		git add <some-file>
+		git commit -m "test commit to trigger bump"
+		```
+
+	- On Linux/macOS (bash):
+
+		```bash
+		./scripts/setup_hooks.sh
+		git add <some-file>
+		git commit -m "test commit to trigger bump"
+		```
+
+- **Notes:**
+	- Hooks run only on local clones; commits made via GitHub web UI or CI will not execute the pre-commit hook. Consider adding a CI check if you need server-side enforcement.
+	- The bump script increments the patch number by default. You can run `scripts/bump_version.py --bump minor` or `--bump major` manually if you need larger version changes.
+
+
 
 
 
