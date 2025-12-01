@@ -1,13 +1,23 @@
 name: "WP Audio Trigger"
 slug: "wp_audio_trigger"
 description: "Event-Recorder: 1/3-Oktav 40–315 Hz, Trigger @80/160 Hz (A), FLAC+CSV, MQTT"
-version: "0.1.11"
+version: "0.1.10"
 arch: [aarch64, armv7, armhf, amd64]
 startup: services
 init: false
 audio: true
 map:
   - media:rw
+
+# Direktzugriff in linker Menüleiste
+homeassistant_api: true
+hassio_api: true
+hassio_role: default
+panel_iframe:
+  wp_audio_addon:
+    title: "WP Audio Add-on"
+    icon: mdi:puzzle
+    url: /hassio/addon/local_wp_audio_trigger/info
 
 options:
   mqtt_host: "core-mosquitto"
@@ -52,4 +62,3 @@ schema:
   ui_port: int
   pulse_source: str
   pulse_volume: int
-
