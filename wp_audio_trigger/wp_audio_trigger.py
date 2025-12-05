@@ -69,9 +69,9 @@ h1{text-align:center;font-size:22px;margin-bottom:20px;font-weight:normal}
 .field-label{font-size:13px;white-space:nowrap}
 input[type=text],input[type=number]{padding:5px 8px;border:1px solid #999;font-size:13px;width:100px;background:white}
 .freq-range{font-size:11px;color:#666}
-.trigger-grid{display:grid;grid-template-columns:140px 140px 180px 180px;gap:15px;align-items:center;margin-bottom:10px}
+.trigger-grid{display:grid;grid-template-columns:30px 160px 200px 160px;gap:20px;align-items:center;margin-bottom:10px}
 .trigger-grid.header{font-weight:normal;font-size:12px;margin-bottom:12px}
-.trigger-grid input{width:130px}
+.trigger-grid input{width:150px}
 .freq-input-row{display:flex;gap:25px;align-items:center;margin-top:10px}
 .calib-grid{display:flex;gap:12px;align-items:flex-start}
 .calib-col{display:flex;flex-direction:column;align-items:center;gap:4px}
@@ -119,25 +119,25 @@ button:hover{background:#138496}
     <span>Min. duration [s]</span>
   </div>
   <div class=trigger-grid>
-    <span class=field-label>1. Frequency [Hz]</span>
+    <span class=field-label>1.</span>
     <input type=number id=t1freq placeholder="">
     <input type=number id=t1amp placeholder="" step=0.1>
     <input type=number id=t1dur placeholder="" step=0.1>
   </div>
   <div class=trigger-grid>
-    <span class=field-label>2. Frequency [Hz]</span>
+    <span class=field-label>2.</span>
     <input type=number id=t2freq placeholder="">
     <input type=number id=t2amp placeholder="" step=0.1>
     <input type=number id=t2dur placeholder="" step=0.1>
   </div>
   <div class=trigger-grid>
-    <span class=field-label>3. Frequency [Hz]</span>
+    <span class=field-label>3.</span>
     <input type=number id=t3freq placeholder="">
     <input type=number id=t3amp placeholder="" step=0.1>
     <input type=number id=t3dur placeholder="" step=0.1>
   </div>
   <div class=trigger-grid>
-    <span class=field-label>4. Frequency [Hz]</span>
+    <span class=field-label>4.</span>
     <input type=number id=t4freq placeholder="">
     <input type=number id=t4amp placeholder="" step=0.1>
     <input type=number id=t4dur placeholder="" step=0.1>
