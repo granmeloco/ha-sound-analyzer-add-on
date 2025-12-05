@@ -97,6 +97,13 @@ button:hover{background:#138496}
   </div>
   <div class=row>
     <div class=radio-group>
+      <input type=radio name=bands id=b2oct value=2octave>
+      <label for=b2oct>1/2-octave bands</label>
+    </div>
+    <span class=freq-range>(31.5 - 44.7 - 63 - 89.4 - 125 - 177 - 250 - 355 - 500 - 707 - 1000 - 1414 - 2000 - 2828 - 4000 - 5657 - 8000 - 11314 - 16000)</span>
+  </div>
+  <div class=row>
+    <div class=radio-group>
       <input type=radio name=bands id=b3oct value=3octave checked>
       <label for=b3oct>1/3-octave bands</label>
     </div>
@@ -205,6 +212,7 @@ fetch('/api/config').then(r=>r.json()).then(data=>{
   document.getElementById('minFreq').value=data.minFreq||31.5;
   document.getElementById('maxFreq').value=data.maxFreq||20000;
   if(data.bands==='1octave') document.getElementById('b1oct').checked=true;
+  else if(data.bands==='2octave') document.getElementById('b2oct').checked=true;
   else document.getElementById('b3oct').checked=true;
   
   for(let i=1;i<=4;i++){
@@ -228,7 +236,7 @@ fetch('/api/config').then(r=>r.json()).then(data=>{
 
 function saveConfig(){
   const config={
-    bands:document.getElementById('b1oct').checked?'1octave':'3octave',
+    bands:document.getElementById('b1oct').checked?'1octave':document.getElementById('b2oct').checked?'2octave':'3octave',
     minFreq:parseFloat(document.getElementById('minFreq').value),
     maxFreq:parseFloat(document.getElementById('maxFreq').value),
     triggers:[
