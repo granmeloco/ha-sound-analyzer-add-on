@@ -42,7 +42,8 @@ def load_cal(path):
     return off, band
 
 def device_info():
-    dev_id = f"wp_audio_trigger_{socket.gethostname()}"
+    # Use fixed ID to prevent duplicate devices on container restart
+    dev_id = "wp_audio_trigger_addon"
     return {
         "identifiers": [dev_id],
         "manufacturer": "WP Audio",
