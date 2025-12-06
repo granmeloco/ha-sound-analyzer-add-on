@@ -11,9 +11,24 @@ from scipy.signal import butter, sosfilt
 import paho.mqtt.client as mqtt
 
 # ---------- Konstanten ----------
-FCS_LOW  = [40,50,63,80,100,125,160,200,250,315]  # Trigger & CSV
-FCS_FULL = [31.5,40,50,63,80,100,125,160,200,250,315,400,500,630,800,1000,1250,1600,2000,2500,3150,4000,5000,6300,8000,10000,12500,16000,20000]  # Spektrum
+FCS_LOW  = [40,50,63,80,100,125,160,200,250,315]  # Trigger & CSV (will be dynamically replaced)
+FCS_FULL = [31.5,40,50,63,80,100,125,160,200,250,315,400,500,630,800,1000,1250,1600,2000,2500,3150,4000,5000,6300,8000,10000,12500,16000,20000]  # Spektrum (will be dynamically replaced)
 K = 2 ** (1/6)
+
+def get_octave_bands(band_type, min_freq=31.5, max_freq=20000):
+    """Generate octave band center frequencies based on band type."""
+    if band_type == "1octave":
+        # 1-octave bands: 31.5, 63, 125, 250, 500, 1000, 2000, 4000, 8000, 16000
+        base_freqs = [31.5, 63, 125, 250, 500, 1000, 2000, 4000, 8000, 16000]
+    elif band_type == "2octave":
+        # 1/2-octave bands
+        base_freqs = [31.5, 44.7, 63, 89.1, 125, 177, 250, 354, 500, 707, 1000, 1414, 2000, 2828, 4000, 5657, 8000, 11314, 16000]
+    else:  # "3octave" or default
+        # 1/3-octave bands (full range)
+        base_freqs = [31.5, 40, 50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 500, 630, 800, 1000, 1250, 1600, 2000, 2500, 3150, 4000, 5000, 6300, 8000, 10000, 12500, 16000, 20000]
+    
+    # Filter by min/max frequency
+    return [f for f in base_freqs if min_freq <= f <= max_freq]
 
 def band_sos(fc, fs, order=4):
     lo = (fc / K) / (fs/2)
@@ -440,22 +455,35 @@ def main():
         ap.add_argument(f"--trigger-amp-{i}", type=float, default=0.0)
     args=ap.parse_args()
 
-    # Initialize trigger configuration
+    # Load full analyzer configuration
     global trigger_config
-    trigger_config["triggers"] = [
-        {"freq": getattr(args, f"trigger_freq_{i}"), "amp": getattr(args, f"trigger_amp_{i}")}
-        for i in range(1, 6)
-    ]
+    analyzer_config = {
+        "bands": "3octave",  # default 1/3-octave
+        "minFreq": 31.5,
+        "maxFreq": 20000,
+        "triggers": [],
+        "logic": "OR",
+        "storageLocation": args.event_dir,
+        "recLength": args.post,
+        "calibration": {"cal63": 0, "cal250": 0, "cal1000": 0, "cal4000": 0, "cal16000": 0}
+    }
+    
     # Load from persistent file if exists
-    config_file = "/data/trigger_config.json"
+    config_file = "/data/analyzer_config.json"
     if os.path.exists(config_file):
         try:
             with open(config_file, "r") as f:
                 saved_config = json.load(f)
-                trigger_config.update(saved_config)
-                print(f"[wp-audio] Trigger-Konfiguration geladen: {len(trigger_config['triggers'])} Trigger")
-        except:
-            pass
+                analyzer_config.update(saved_config)
+                print(f"[wp-audio] Analyzer configuration loaded: {analyzer_config['bands']} bands, {len(analyzer_config['triggers'])} triggers, logic={analyzer_config['logic']}", flush=True)
+        except Exception as e:
+            print(f"[wp-audio] Error loading analyzer config: {e}", flush=True)
+    
+    # Legacy: initialize trigger_config from command-line args if no saved config
+    trigger_config["triggers"] = analyzer_config.get("triggers", [
+        {"freq": getattr(args, f"trigger_freq_{i}"), "amp": getattr(args, f"trigger_amp_{i}")}
+        for i in range(1, 6)
+    ])
 
     # Web-UI
     print(f"[wp-audio] Starting HTTP server on port {args.ui_port}...", flush=True)
@@ -498,8 +526,29 @@ def main():
     t0=time.time()
     while not connected["ok"] and time.time()-t0<5: time.sleep(0.1)
 
-    # Kalibrierung
+    # Load configured bands dynamically
+    global FCS_LOW, FCS_FULL
+    bands_config = analyzer_config.get("bands", "3octave")
+    min_freq = analyzer_config.get("minFreq", 31.5)
+    max_freq = analyzer_config.get("maxFreq", 20000)
+    FCS_LOW = get_octave_bands(bands_config, min_freq, max_freq)
+    FCS_FULL = FCS_LOW  # Use same bands for both trigger and spectrum
+    print(f"[wp-audio] Using {bands_config} bands: {FCS_LOW}", flush=True)
+    
+    # Kalibrierung from config
     cal_off, band_corr = load_cal(args.cal_file)
+    calibration = analyzer_config.get("calibration", {})
+    if calibration:
+        # Apply calibration offsets from UI config
+        for freq_key, offset_str in calibration.items():
+            try:
+                freq = int(freq_key.replace("cal", ""))
+                offset = float(offset_str) if offset_str else 0.0
+                if offset != 0.0:
+                    band_corr[freq] = band_corr.get(freq, 0.0) + offset
+                    print(f"[wp-audio] Calibration: {freq} Hz += {offset:.2f} dB", flush=True)
+            except: pass
+    
     def spl_db(rms): return 20.0*np.log10(max(rms,1e-20)/20e-6)+cal_off
 
     # Ziel-SR & Filter-Builder
@@ -610,12 +659,16 @@ def main():
                 la=lz+a_low[fc]
                 LZ[fc]=lz; LA[fc]=la
 
-            la80=LA[80]; la160=LA[160]
+            # Legacy support for 80/160 Hz if they exist in bands
+            la80 = LA.get(80, 0.0)
+            la160 = LA.get(160, 0.0)
 
-            # MQTT Live
+            # MQTT Live (publish first band and any legacy frequencies)
             try:
-                client.publish(f"{args.topic_base}/octA_80", f"{la80:.2f}", qos=0)
-                client.publish(f"{args.topic_base}/octA_160", f"{la160:.2f}", qos=0)
+                if 80 in LA:
+                    client.publish(f"{args.topic_base}/octA_80", f"{la80:.2f}", qos=0)
+                if 160 in LA:
+                    client.publish(f"{args.topic_base}/octA_160", f"{la160:.2f}", qos=0)
             except: pass
 
             # UI Snapshot
@@ -641,14 +694,32 @@ def main():
                 except: pass
                 last_spec_pub = nowm
 
-            # Trigger-Logik
-            over=(la80>=args.thresh_a80) or (la160>=args.thresh_a160)
+            # Dynamic Trigger Evaluation
+            triggers = analyzer_config.get("triggers", [])
+            logic = analyzer_config.get("logic", "OR")
+            trigger_results = []
+            
+            for trig in triggers:
+                freq = trig.get("freq", 0)
+                amp = trig.get("amp", 0)
+                if freq > 0 and amp > 0 and freq in LA:
+                    trigger_results.append(LA[freq] >= amp)
+            
+            # Apply logic (OR = any trigger, AND = all triggers)
+            if logic == "AND":
+                over = all(trigger_results) if trigger_results else False
+            else:  # OR (default)
+                over = any(trigger_results) if trigger_results else False
+            # Use configured storage location and recording length
+            storage_dir = analyzer_config.get("storageLocation", args.event_dir)
+            rec_length = analyzer_config.get("recLength", args.post)
+            
             if not S["trig"]:
                 if over:
                     S["hold"]+=block_sec
                     if S["hold"]>=args.hold_sec:
-                        S["trig"]=True; S["post_left"]=args.post
-                        S["cur_dir"]=os.path.join(args.event_dir, now_utc()); os.makedirs(S["cur_dir"], exist_ok=True)
+                        S["trig"]=True; S["post_left"]=rec_length
+                        S["cur_dir"]=os.path.join(storage_dir, now_utc()); os.makedirs(S["cur_dir"], exist_ok=True)
                         S["event_audio"]=list(pre_buf); S["event_specs"]=[]; S["peak80"]=-999.0; S["peak160"]=-999.0
                         print(f"[wp-audio] Event START {S['cur_dir']}")
                         S["hold"]=0
@@ -658,7 +729,7 @@ def main():
                 S["event_audio"].append(x.copy()); S["event_specs"].append(rec)
                 S["peak80"]=max(S["peak80"],la80); S["peak160"]=max(S["peak160"],la160)
                 if over:
-                    S["post_left"]=args.post
+                    S["post_left"]=rec_length
                 else:
                     S["post_left"]-=block_sec
                     if S["post_left"]<=0:
