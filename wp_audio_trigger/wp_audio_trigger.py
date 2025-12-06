@@ -568,6 +568,13 @@ def main():
                       "availability_topic":f"{args.topic_base}/availability",
                       "device":dev,"icon":"mdi:database"}
             
+            # Delete old discovery configs (cleanup from previous versions)
+            client.publish(f"{disc}/sensor/{dev_id}/spectrum/config", "", qos=1, retain=True)
+            client.publish(f"{disc}/sensor/{dev_id}/spectrum_live/config", "", qos=1, retain=True)
+            client.publish(f"{disc}/sensor/{dev_id}/octA_80/config", "", qos=1, retain=True)
+            client.publish(f"{disc}/sensor/{dev_id}/octA_160/config", "", qos=1, retain=True)
+            
+            # Publish current discovery configs
             client.publish(f"{disc}/sensor/{dev_id}/wp_spectrum/config", json.dumps(cfgspec), qos=1, retain=True)
             client.publish(f"{disc}/sensor/{dev_id}/wp_spectrum_live/config", json.dumps(cfgspec_live), qos=1, retain=True)
             client.publish(f"{disc}/sensor/{dev_id}/event_log/config", json.dumps(cfgevent), qos=1, retain=True)
