@@ -349,43 +349,53 @@ class H(BaseHTTPRequestHandler):
             if self.path == "/api/triggers":
                 try:
                     data = json.loads(body)
-                    idx = data.get("idx")
-                    freq = data.get("freq")
-                    amp = data.get("amp")
-                    if idx is not None and 0 <= idx < len(trigger_config["triggers"]) and freq and amp:
-                        trigger_config["triggers"][idx] = {"freq": freq, "amp": amp}
-                        # Save to file for persistence
-                        config_file = "/data/trigger_config.json"
-                        with open(config_file, "w") as f:
-                            json.dump(trigger_config, f)
-                        self.send_response(200)
-                        self.send_header("Content-Type","application/json")
-                        self.end_headers()
-                        self.wfile.write(json.dumps({"success": True}).encode("utf-8"))
-                        return
+                    print(f"[wp-audio] Received trigger save request: {len(body)} bytes")
+                    # Save just triggers
+                    trigger_file = "/data/trigger_config.json"
+                    os.makedirs(os.path.dirname(trigger_file), exist_ok=True)
+                    with open(trigger_file, "w") as f:
+                        json.dump(data, f, indent=2)
+                    print(f"[wp-audio] Trigger configuration saved to {trigger_file}: {len(data)} triggers")
+                    self.send_response(200)
+                    self.send_header("Content-Type","application/json")
+                    self.send_header("Access-Control-Allow-Origin", "*")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"success": True}).encode("utf-8"))
+                    return
                 except Exception as e:
-                    print(f"[wp-audio] POST processing error: {e}")
+                    print(f"[wp-audio] Trigger save error: {e}")
+                    import traceback
+                    traceback.print_exc()
                 self.send_response(400)
+                self.send_header("Content-Type","application/json")
                 self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "error": str(e) if 'e' in locals() else "Unknown error"}).encode("utf-8"))
                 return
             
             if self.path == "/api/config":
                 try:
                     data = json.loads(body)
+                    print(f"[wp-audio] Received config save request: {len(body)} bytes")
                     # Save entire configuration
                     config_file = "/data/analyzer_config.json"
+                    os.makedirs(os.path.dirname(config_file), exist_ok=True)
                     with open(config_file, "w") as f:
                         json.dump(data, f, indent=2)
-                    print(f"[wp-audio] Configuration saved: {len(data.get('triggers', []))} triggers, logic={data.get('logic')}")
+                    print(f"[wp-audio] Configuration saved to {config_file}: {len(data.get('triggers', []))} triggers, logic={data.get('logic')}")
                     self.send_response(200)
                     self.send_header("Content-Type","application/json")
+                    self.send_header("Access-Control-Allow-Origin", "*")
                     self.end_headers()
                     self.wfile.write(json.dumps({"success": True}).encode("utf-8"))
                     return
                 except Exception as e:
                     print(f"[wp-audio] Config save error: {e}")
+                    import traceback
+                    traceback.print_exc()
                 self.send_response(400)
+                self.send_header("Content-Type","application/json")
                 self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "error": str(e) if 'e' in locals() else "Unknown error"}).encode("utf-8"))
                 return
             
             self.send_response(404)
