@@ -349,13 +349,13 @@ class H(BaseHTTPRequestHandler):
             if self.path == "/api/triggers":
                 try:
                     data = json.loads(body)
-                    print(f"[wp-audio] Received trigger save request: {len(body)} bytes")
+                    print(f"[wp-audio] Received trigger save request: {len(body)} bytes", flush=True)
                     # Save just triggers
                     trigger_file = "/data/trigger_config.json"
                     os.makedirs(os.path.dirname(trigger_file), exist_ok=True)
                     with open(trigger_file, "w") as f:
                         json.dump(data, f, indent=2)
-                    print(f"[wp-audio] Trigger configuration saved to {trigger_file}: {len(data)} triggers")
+                    print(f"[wp-audio] Trigger configuration saved to {trigger_file}: {len(data)} triggers", flush=True)
                     self.send_response(200)
                     self.send_header("Content-Type","application/json")
                     self.send_header("Access-Control-Allow-Origin", "*")
@@ -363,7 +363,7 @@ class H(BaseHTTPRequestHandler):
                     self.wfile.write(json.dumps({"success": True}).encode("utf-8"))
                     return
                 except Exception as e:
-                    print(f"[wp-audio] Trigger save error: {e}")
+                    print(f"[wp-audio] Trigger save error: {e}", flush=True)
                     import traceback
                     traceback.print_exc()
                 self.send_response(400)
@@ -375,13 +375,13 @@ class H(BaseHTTPRequestHandler):
             if self.path == "/api/config":
                 try:
                     data = json.loads(body)
-                    print(f"[wp-audio] Received config save request: {len(body)} bytes")
+                    print(f"[wp-audio] Received config save request: {len(body)} bytes", flush=True)
                     # Save entire configuration
                     config_file = "/data/analyzer_config.json"
                     os.makedirs(os.path.dirname(config_file), exist_ok=True)
                     with open(config_file, "w") as f:
                         json.dump(data, f, indent=2)
-                    print(f"[wp-audio] Configuration saved to {config_file}: {len(data.get('triggers', []))} triggers, logic={data.get('logic')}")
+                    print(f"[wp-audio] Configuration saved to {config_file}: {len(data.get('triggers', []))} triggers, logic={data.get('logic')}", flush=True)
                     self.send_response(200)
                     self.send_header("Content-Type","application/json")
                     self.send_header("Access-Control-Allow-Origin", "*")
@@ -389,7 +389,7 @@ class H(BaseHTTPRequestHandler):
                     self.wfile.write(json.dumps({"success": True}).encode("utf-8"))
                     return
                 except Exception as e:
-                    print(f"[wp-audio] Config save error: {e}")
+                    print(f"[wp-audio] Config save error: {e}", flush=True)
                     import traceback
                     traceback.print_exc()
                 self.send_response(400)
@@ -412,9 +412,9 @@ def start_http(port):
     try:
         srv = HTTPServer(("0.0.0.0", port), H)
         threading.Thread(target=srv.serve_forever, daemon=True).start()
-        print(f"[wp-audio] Web-UI läuft auf Ingress (Port {port})")
+        print(f"[wp-audio] Web-UI läuft auf Ingress (Port {port})", flush=True)
     except Exception as e:
-        print(f"[wp-audio] FEHLER beim Starten des HTTP-Servers: {e}")
+        print(f"[wp-audio] FEHLER beim Starten des HTTP-Servers: {e}", flush=True)
         raise
 
 # --------------- Hauptprogramm ----------------
@@ -456,7 +456,9 @@ def main():
             pass
 
     # Web-UI
+    print(f"[wp-audio] Starting HTTP server on port {args.ui_port}...", flush=True)
     start_http(args.ui_port)
+    print(f"[wp-audio] HTTP server started successfully", flush=True)
 
     # MQTT
     connected = {"ok": False}
