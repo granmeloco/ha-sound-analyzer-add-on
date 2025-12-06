@@ -71,10 +71,10 @@ latest_payload = {"bands": [], "values": [], "weighting": "Z", "ts": now_utc(), 
 trigger_config = {"triggers": []}  # Will be populated from args
 
 HTML = """<!DOCTYPE html><meta charset=utf-8>
-<title>Audio Analyzer settings</title>
+<title>Audio Analyzer Configuration</title>
 <style>
 body{font-family:Arial,sans-serif;margin:0;padding:20px;background:#fff;max-width:1000px;margin:0 auto}
-h1{text-align:center;font-size:22px;margin-bottom:20px;font-weight:normal}
+h1{text-align:center;font-size:22px;margin-bottom:20px;font-weight:bold}
 .section{background:#e8e8e8;padding:16px;margin-bottom:16px;border-radius:4px}
 .section-title{font-weight:bold;margin-bottom:16px;font-size:14px}
 .row{display:flex;gap:10px;margin-bottom:10px;align-items:center}
@@ -85,7 +85,7 @@ h1{text-align:center;font-size:22px;margin-bottom:20px;font-weight:normal}
 input[type=text],input[type=number]{padding:5px 8px;border:1px solid #999;font-size:13px;width:100px;background:white}
 .freq-range{font-size:11px;color:#666}
 .trigger-grid{display:grid;grid-template-columns:30px 160px 200px 160px;gap:20px;align-items:center;margin-bottom:10px}
-.trigger-grid.header{font-weight:normal;font-size:12px;margin-bottom:12px}
+.trigger-grid.header{font-weight:normal;font-size:13px;margin-bottom:12px}
 .trigger-grid input{width:150px}
 .freq-input-row{display:flex;gap:25px;align-items:center;margin-top:10px}
 .calib-grid{display:flex;gap:12px;align-items:flex-start}
@@ -95,11 +95,12 @@ input[type=text],input[type=number]{padding:5px 8px;border:1px solid #999;font-s
 .calib-label{font-size:13px;margin-right:8px;align-self:center}
 button{background:#17a2b8;color:white;border:none;padding:8px 24px;border-radius:4px;cursor:pointer;font-size:13px;margin-top:10px}
 button:hover{background:#138496}
+.browse-btn{padding:5px 12px;margin-top:0;margin-left:8px;font-size:12px}
 #status{margin-top:10px;padding:8px;border-radius:4px;font-size:13px;display:none}
 #status.success{background:#d4edda;color:#155724;display:block}
 #status.error{background:#f8d7da;color:#721c24;display:block}
 </style>
-<h1>Audio Analyzer settings</h1>
+<h1>Audio Analyzer Configuration</h1>
 
 <div class=section>
   <div class=section-title>Spectrum analyzer settings</div>
@@ -122,7 +123,7 @@ button:hover{background:#138496}
       <input type=radio name=bands id=b3oct value=3octave checked>
       <label for=b3oct>1/3-octave bands</label>
     </div>
-    <span class=freq-range>(1 - 1.25 - 1.6 - 2 - 2.5 - 3.15 - 4 - 5 - 6.3 - 8 - 10 - 12.5 - 16 - 20 - 25 - 31.5 - 40 - 50 - 63 - 80 - 100 - 125 - 160 - 200 - 250 - 315 - 400 - 500 - 630 - 800 - 1000 - 1250 - 1600 - 2000 - 2500 - 3150 - 4000 - 5000 - 6300 - 8000 - 10000 - 12500 - 16000 - 20000 Hz)</span>
+    <span class=freq-range>(1 - 1.25 - 1.6 - 2 - 2.5 - 3.15 - 4.5 - 6.3 - 8 - 10 - 12.5 - 16 - 20 - 25 - 31.5 - 40 - 50 - 63 - 80 - 100 - 125 - 160 - 200 - 250 - 315 - 400 - 500 - 630 - 800 - 1000 - 1250 - 1600 - 2000 - 2500 - 3150 - 4000 - 5000 - 6300 - 8000 - 10000 - 12500 - 16000 - 20000 Hz)</span>
   </div>
   <div class=freq-input-row>
     <span class=field-label>Min. Frequency [Hz]</span>
@@ -182,6 +183,7 @@ button:hover{background:#138496}
   <div class=row>
     <span class=field-label>Storage location</span>
     <input type=text id=storageLocation style="width:400px" placeholder="/media/wp_audio/events">
+    <button class=browse-btn onclick="browseFolder()">Browse...</button>
   </div>
   <div class=row>
     <span class=field-label>Recording length [s]</span>
@@ -290,6 +292,14 @@ function saveConfig(){
       statusDiv.className='error';
     }
   }).catch(e=>{statusDiv.style.display='block';statusDiv.textContent='Connection error: '+e.message;statusDiv.className='error';});
+}
+
+function browseFolder(){
+  const currentPath=document.getElementById('storageLocation').value||'/media/wp_audio/events';
+  const newPath=prompt('Enter storage location path:',currentPath);
+  if(newPath!==null&&newPath.trim()!==''){
+    document.getElementById('storageLocation').value=newPath.trim();
+  }
 }
 </script>"""
 
@@ -830,15 +840,15 @@ def main():
             
             # Apply logic (OR = any trigger, AND = all triggers)
             if logic == "AND":
-                over = all(trigger_results) if trigger_results else False
+                trigger_event = all(trigger_results) if trigger_results else False
             else:  # OR (default)
-                over = any(trigger_results) if trigger_results else False
+                trigger_event = any(trigger_results) if trigger_results else False
             # Use configured storage location and recording length
             storage_dir = analyzer_config.get("storageLocation", args.event_dir)
             rec_length = analyzer_config.get("recLength", args.post)
             
             if not S["trig"]:
-                if over:
+                if trigger_event:
                     S["hold"]+=block_sec
                     if S["hold"]>=args.hold_sec:
                         S["trig"]=True; S["post_left"]=rec_length
@@ -851,7 +861,7 @@ def main():
             else:
                 S["event_audio"].append(x.copy()); S["event_specs"].append(rec)
                 S["peak80"]=max(S["peak80"],la80); S["peak160"]=max(S["peak160"],la160)
-                if over:
+                if trigger_event:
                     S["post_left"]=rec_length
                 else:
                     S["post_left"]-=block_sec
