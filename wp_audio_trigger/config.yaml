@@ -1,7 +1,7 @@
 name: "WP Audio Trigger"
 slug: "wp_audio_trigger"
 description: "Event-Recorder: 1/3-Oktav 40–315 Hz, Trigger @80/160 Hz (A), FLAC+CSV, MQTT"
-version: "0.1.35"
+version: "0.1.36"
 arch: [aarch64, armv7, armhf, amd64]
 startup: services
 init: false

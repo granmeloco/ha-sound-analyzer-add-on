@@ -406,14 +406,27 @@ class H(BaseHTTPRequestHandler):
                         json.dump(data, f, indent=2)
                     print(f"[wp-audio] Configuration saved to {config_file}: {len(data.get('triggers', []))} triggers, logic={data.get('logic')}", flush=True)
                     
-                    # Trigger add-on restart to apply configuration changes
-                    import subprocess
+                    # Trigger add-on restart to apply configuration changes via Supervisor API
                     import threading
+                    import urllib.request
                     def restart_addon():
                         import time
                         time.sleep(2)  # Wait 2 seconds to allow response to be sent
-                        print("[wp-audio] Restarting add-on to apply configuration changes...", flush=True)
-                        subprocess.run(["s6-svc", "-r", "/run/service/addon"])
+                        try:
+                            token = os.environ.get("SUPERVISOR_TOKEN", "")
+                            if token:
+                                print("[wp-audio] Restarting add-on via Supervisor API...", flush=True)
+                                req = urllib.request.Request(
+                                    "http://supervisor/addons/self/restart",
+                                    method="POST",
+                                    headers={"Authorization": f"Bearer {token}"}
+                                )
+                                urllib.request.urlopen(req, timeout=5)
+                                print("[wp-audio] Restart command sent successfully", flush=True)
+                            else:
+                                print("[wp-audio] WARNING: SUPERVISOR_TOKEN not available, cannot auto-restart", flush=True)
+                        except Exception as e:
+                            print(f"[wp-audio] Restart failed: {e}", flush=True)
                     threading.Thread(target=restart_addon, daemon=True).start()
                     
                     self.send_response(200)
