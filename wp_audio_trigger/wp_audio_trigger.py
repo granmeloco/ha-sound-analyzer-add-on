@@ -812,9 +812,14 @@ def main():
             for trig in triggers:
                 freq = trig.get("freq", 0)
                 amp = trig.get("amp", 0)
-                if freq > 0 and amp > 0 and freq in LA:
-                    is_triggered = LA[freq] >= amp
-                    trigger_results.append(is_triggered)
+                if freq > 0 and amp > 0:
+                    if freq in LA:
+                        is_triggered = LA[freq] >= amp
+                        trigger_results.append(is_triggered)
+                        if is_triggered and not S["trig"]:
+                            print(f"[wp-audio] DEBUG: Trigger {freq}Hz active: {LA[freq]:.1f} dB >= {amp:.1f} dB", flush=True)
+                    else:
+                        print(f"[wp-audio] WARNING: Trigger frequency {freq} Hz not found in current bands. Available: {sorted(LA.keys())}", flush=True)
                     
                     # Track trigger state changes
                     if is_triggered:
@@ -849,6 +854,11 @@ def main():
                 trigger_event = all(trigger_results) if trigger_results else False
             else:  # OR (default)
                 trigger_event = any(trigger_results) if trigger_results else False
+            
+            # Debug: show trigger evaluation result
+            if trigger_event and S["hold"] == 0:
+                print(f"[wp-audio] Trigger event started! Logic={logic}, Hold time will accumulate...", flush=True)
+            
             # Use configured storage location and recording length
             storage_dir = analyzer_config.get("storageLocation", args.event_dir)
             rec_length = analyzer_config.get("recLength", args.post)
@@ -856,6 +866,7 @@ def main():
             if not S["trig"]:
                 if trigger_event:
                     S["hold"]+=block_sec
+                    print(f"[wp-audio] Accumulating hold time: {S['hold']:.2f}s / {args.hold_sec}s", flush=True)
                     if S["hold"]>=args.hold_sec:
                         S["trig"]=True; S["post_left"]=rec_length
                         S["cur_dir"]=os.path.join(storage_dir, now_utc()); os.makedirs(S["cur_dir"], exist_ok=True)
