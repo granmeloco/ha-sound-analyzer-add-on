@@ -972,6 +972,7 @@ def main():
                     # Trigger ended, count down to finish event
                     S["post_left"]-=block_sec
                     if S["post_left"]<=0:
+                        print(f"[wp-audio] DEBUG: Calling end_event, cur_dir={S['cur_dir']}, actual_duration={S['actual_duration']:.1f}s", flush=True)
                         end_event(current_fs)
                 
                 # Check if we've exceeded configured recording length
