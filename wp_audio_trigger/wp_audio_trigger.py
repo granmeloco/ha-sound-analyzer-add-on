@@ -1041,21 +1041,31 @@ def main():
                     total_energy = sum(10**(la/10) for la in LA.values())
                     overall_dbA = 10 * np.log10(total_energy) if total_energy > 0 else 0.0
                     S["overall_dbA"].append(overall_dbA)
+                    
+                    # Check if we've reached configured recording length - save immediately
+                    if S["actual_duration"] >= rec_length:
+                        S["recording_stopped"] = True
+                        print(f"[wp-audio] Recording limit reached ({rec_length}s), saving files now...", flush=True)
+                        end_event(current_fs)
+                        # Note: Event will continue tracking duration until trigger ends
                 
-                if trigger_event:
+                # Continue tracking total event duration even after recording stopped
+                if not trigger_event:
+                    # Trigger ended, check if we need to finalize (only if not already saved)
+                    if S["trig"]:  # Still in event state but trigger dropped
+                        S["post_left"]-=block_sec
+                        if S["post_left"]<=0:
+                            # This handles the case where recording was already saved but we're tracking duration
+                            if not S["recording_stopped"]:
+                                print(f"[wp-audio] DEBUG: Trigger ended, calling end_event, cur_dir={S['cur_dir']}, actual_duration={S['actual_duration']:.1f}s", flush=True)
+                                end_event(current_fs)
+                            else:
+                                # Already saved, just reset state
+                                print(f"[wp-audio] Event tracking ended. Total duration: {S['actual_duration']:.1f}s", flush=True)
+                                S["trig"]=False; S["hold"]=0
+                else:
                     # Trigger still active, reset post timer
                     S["post_left"]=rec_length
-                else:
-                    # Trigger ended, count down to finish event
-                    S["post_left"]-=block_sec
-                    if S["post_left"]<=0:
-                        print(f"[wp-audio] DEBUG: Calling end_event, cur_dir={S['cur_dir']}, actual_duration={S['actual_duration']:.1f}s", flush=True)
-                        end_event(current_fs)
-                
-                # Check if we've exceeded configured recording length
-                if not S["recording_stopped"] and S["actual_duration"] >= rec_length:
-                    S["recording_stopped"] = True
-                    print(f"[wp-audio] Recording limit reached ({rec_length}s), but continuing to track event duration", flush=True)
 
     finally:
         try:
