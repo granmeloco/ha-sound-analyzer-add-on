@@ -1,0 +1,109 @@
+# Audio Trigger Event Viewer Dashboard
+# Copy this to your Home Assistant configuration
+
+# 1. First, add these to your configuration.yaml:
+
+sensor:
+  - platform: rest
+    name: "Audio Events"
+    resource: "http://homeassistant:8099/api/events"
+    scan_interval: 30
+    json_attributes:
+      - event_id
+      - start_time
+      - stop_time
+      - statistics
+      - configuration
+    value_template: "{{ value_json | length }}"
+
+# 2. Then create a new dashboard with this configuration:
+
+views:
+  - title: Audio Trigger Events
+    path: audio-events
+    cards:
+      # Event Statistics Card
+      - type: entities
+        title: Audio Trigger Status
+        entities:
+          - entity: sensor.audio_events
+            name: Total Events Recorded
+          - entity: sensor.at_event_log
+            name: Last Event
+
+      # Event List with Details
+      - type: markdown
+        title: Recent Events
+        content: |
+          {% set events = state_attr('sensor.audio_events', 'value_json') | default([]) %}
+          {% if events %}
+          | Time | Duration | Max dB(A) | Avg dB(A) | Files |
+          |------|----------|-----------|-----------|-------|
+          {% for event in events[:10] %}
+          | {{ event.start_time }} | {{ event.statistics.actual_duration_seconds }}s | {{ event.statistics.max_overall_dbA }}dB | {{ event.statistics.avg_overall_dbA }}dB | [Audio](http://homeassistant:8099/api/events/{{ event.event_id }}/audio.flac) • [Spectrum](http://homeassistant:8099/api/events/{{ event.event_id }}/spectrum.csv) • [Meta](http://homeassistant:8099/api/events/{{ event.event_id }}/event_metadata.json) |
+          {% endfor %}
+          {% else %}
+          No events recorded yet.
+          {% endif %}
+
+      # Audio Player Card (for latest event)
+      - type: markdown
+        title: Latest Event Audio
+        content: |
+          {% set events = state_attr('sensor.audio_events', 'value_json') | default([]) %}
+          {% if events %}
+          {% set latest = events[0] %}
+          ### {{ latest.event_id }}
+          **Duration:** {{ latest.statistics.actual_duration_seconds }}s  
+          **Max dB(A):** {{ latest.statistics.max_overall_dbA }}  
+          **Avg dB(A):** {{ latest.statistics.avg_overall_dbA }}
+          
+          <audio controls style="width:100%">
+            <source src="http://homeassistant:8099/api/events/{{ latest.event_id }}/audio.flac" type="audio/flac">
+            Your browser does not support the audio element.
+          </audio>
+          {% else %}
+          No events recorded yet.
+          {% endif %}
+
+      # ApexCharts for Spectrum Visualization (requires custom:apexcharts-card)
+      - type: custom:apexcharts-card
+        header:
+          show: true
+          title: Latest Event Spectrum
+        graph_span: 24h
+        series:
+          - entity: sensor.at_spectrum
+            name: Current Spectrum
+            type: line
+            stroke_width: 2
+
+# 3. Alternative: Use an iframe to embed the add-on UI
+      - type: iframe
+        url: http://homeassistant:8099
+        aspect_ratio: 100%
+        title: Audio Trigger Control Panel
+
+# 4. For better event browsing, consider using:
+# - Custom card: flex-table-card
+# - Custom card: auto-entities
+# - Custom card: fold-entity-row
+
+# Example with auto-entities (requires custom:auto-entities):
+      - type: custom:auto-entities
+        card:
+          type: entities
+          title: Event Files (Last 5)
+        filter:
+          template: |
+            {% set events = state_attr('sensor.audio_events', 'value_json') | default([]) %}
+            {% for event in events[:5] %}
+            {
+              "type": "button",
+              "name": "{{ event.event_id }}",
+              "tap_action": {
+                "action": "url",
+                "url_path": "http://homeassistant:8099/api/events/{{ event.event_id }}/audio.flac"
+              }
+            }
+            {% endfor %}
