@@ -6,7 +6,7 @@
     "wp_audio_trigger": {
       "name": "WP Audio Trigger",
       "slug": "wp_audio_trigger",
-      "version": "0.1.66",
+      "version": "0.1.67",
       "url": "https://github.com/granmeloco/HA-Sound-Analyzer-Add-on",
       "directory": "wp_audio_trigger",
       "arch": ["aarch64","armv7","armhf","amd64"]
