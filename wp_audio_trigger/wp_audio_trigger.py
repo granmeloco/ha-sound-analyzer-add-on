@@ -79,7 +79,7 @@ trigger_config = {"triggers": []}  # Will be populated from args
 analyzer_config = {}  # Will be populated in main()
 
 HTML = """<!DOCTYPE html><meta charset=utf-8>
-<title>Audio Analyzer Configuration</title>
+<title>Sound Analyzer and trigger based Recorder</title>
 <style>
 body{font-family:Arial,sans-serif;margin:0;padding:20px;background:#fff;max-width:1000px;margin:0 auto}
 h1{text-align:center;font-size:22px;margin-bottom:20px;font-weight:bold}
@@ -108,7 +108,7 @@ button:hover{background:#138496}
 #status.success{background:#d4edda;color:#155724;display:block}
 #status.error{background:#f8d7da;color:#721c24;display:block}
 </style>
-<h1>Audio Analyzer Configuration</h1>
+<h1>Sound Analyzer and trigger based Recorder</h1>
 
 <div class=section>
   <div class=section-title>Spectrum analyzer settings</div>
@@ -139,10 +139,14 @@ button:hover{background:#138496}
     <span class=field-label>Max. Frequency [Hz]</span>
     <input type=number id=maxFreq value=20000 step=0.1>
   </div>
-  <div class=row style="margin-top:10px">
-    <span class=field-label>Publish interval [s]</span>
-    <input type=number id=publishInterval value=1 step=0.1 min=0.1>
-  </div>
+    <div class=row style="margin-top:10px">
+        <span class=field-label>Publish interval [s]</span>
+        <input type=number id=publishInterval value=1 step=0.1 min=0.1>
+    </div>
+    <div class=row>
+        <span class=field-label>Averaging period [s]</span>
+        <input type=number id=averagingPeriod value=2 step=0.1 min=0.1>
+    </div>
   <div class=row>
     <span class=field-label>dB weighting</span>
     <select id=dbWeighting style="padding:5px 8px;border:1px solid #999;font-size:13px;background:white">
@@ -302,7 +306,8 @@ fetch('api/config').then(r=>r.json()).then(data=>{
   document.getElementById('minFreq').value=data.minFreq||31.5;
   document.getElementById('maxFreq').value=data.maxFreq||20000;
   document.getElementById('publishInterval').value=data.publishInterval||1;
-  document.getElementById('dbWeighting').value=data.dbWeighting||'A';
+    document.getElementById('dbWeighting').value=data.dbWeighting||'A';
+    document.getElementById('averagingPeriod').value = data.averagingPeriod || 2;
   if(data.bands==='1octave') document.getElementById('b1oct').checked=true;
   else if(data.bands==='2octave') document.getElementById('b2oct').checked=true;
   else document.getElementById('b3oct').checked=true;
@@ -348,6 +353,7 @@ function saveConfig(){
     maxFreq:parseFloat(document.getElementById('maxFreq').value),
     publishInterval:parseFloat(document.getElementById('publishInterval').value)||1,
     dbWeighting:document.getElementById('dbWeighting').value||'A',
+    averagingPeriod:parseFloat(document.getElementById('averagingPeriod').value)||2,
     triggers:[
       {freq:parseInt(document.getElementById('t1freq').value)||0,amp:parseFloat(document.getElementById('t1amp').value)||0,duration:parseFloat(document.getElementById('t1dur').value)||0},
       {freq:parseInt(document.getElementById('t2freq').value)||0,amp:parseFloat(document.getElementById('t2amp').value)||0,duration:parseFloat(document.getElementById('t2dur').value)||0},
@@ -635,6 +641,7 @@ def main():
         "minFreq": 31.5,
         "maxFreq": 20000,
         "publishInterval": 1,
+        "averagingPeriod": 2,
         "dbWeighting": "A",
         "triggers": [],
         "logic": "OR",
@@ -676,6 +683,7 @@ def main():
     args.publish_spectrum = True
     args.spectrum_weighting = analyzer_config.get("dbWeighting", "A")
     args.spectrum_interval = analyzer_config.get("publishInterval", 1.0)
+    args.averaging_period = analyzer_config.get("averagingPeriod", 2.0)
     
     # Initialize trigger_config from saved config
     trigger_config["triggers"] = analyzer_config.get("triggers", [])
@@ -1023,9 +1031,24 @@ def main():
             # volles Spektrum (optional, schneller dank kürzerer Blöcke)
             nowm = time.monotonic()
             if args.publish_spectrum and (nowm - last_spec_pub) >= float(args.spectrum_interval):
+                # Energy-based averaging buffer for spectrum
+                if not hasattr(main, '_avg_buffer'):
+                    main._avg_buffer = []
+                avg_buffer = main._avg_buffer
+                avg_buffer.append(x.copy())
+                # Remove old blocks outside averaging window
+                max_avg_blocks = max(1, int(args.averaging_period / float(args.spectrum_interval)))
+                if len(avg_buffer) > max_avg_blocks:
+                    avg_buffer = avg_buffer[-max_avg_blocks:]
+                    main._avg_buffer = avg_buffer
+                # Concatenate all blocks in buffer for averaging
+                if len(avg_buffer) > 0:
+                    x_avg = np.concatenate(avg_buffer)
+                else:
+                    x_avg = x
                 vals=[]
                 for fc,sos in sos_full.items():
-                    y=sosfilt(sos,x)
+                    y=sosfilt(sos,x_avg)
                     lz=spl_db(np.sqrt(np.mean(y*y)))+corr_full.get(fc,0.0)
                     if args.spectrum_weighting=="A":
                         v = lz + a_corr(fc)
@@ -1035,8 +1058,14 @@ def main():
                         v = lz
                     vals.append(round(v, 1))  # Round to 1 decimal place
                 timestamp = now_utc()
-                payload={"bands":[str(int(fc)) if fc>=100 else str(fc) for fc in FCS_FULL],
-                         "values":vals,"weighting":args.spectrum_weighting,"ts":timestamp,"time":timestamp}
+                payload={
+                    "bands":[str(int(fc)) if fc>=100 else str(fc) for fc in FCS_FULL],
+                    "values":vals,
+                    "weighting":args.spectrum_weighting,
+                    "averaging_period": args.averaging_period,
+                    "ts":timestamp,
+                    "time":timestamp
+                }
                 latest_payload.update(payload)
                 # Always publish to spectrum_live for visual display
                 try: client.publish(f"{args.topic_base}/spectrum_live", json.dumps(payload), qos=0)
