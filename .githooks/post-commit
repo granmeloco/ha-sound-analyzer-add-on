@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+
+# Always sync repository.json version with config.yaml after each commit
+python3 scripts/sync_repo_version.py
+git add repository.json || true
+
+# Auto-tag version if config.yaml version changed
+last_commit=$(git rev-parse HEAD)
+prev_commit=$(git rev-parse HEAD^)
+last_version=$(git show $last_commit:wp_audio_trigger/config.yaml | grep '^version:' | sed 's/version: "\(.*\)"/\1/')
+prev_version=$(git show $prev_commit:wp_audio_trigger/config.yaml | grep '^version:' | sed 's/version: "\(.*\)"/\1/')
+if [ "$last_version" != "$prev_version" ] && ! git rev-parse "v$last_version" >/dev/null 2>&1; then
+    git tag "v$last_version"
+    git push origin "v$last_version"
+fi
