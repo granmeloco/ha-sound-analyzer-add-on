@@ -695,7 +695,7 @@ def main():
 
     # MQTT
     connected = {"ok": False}
-    record_spectrum = {"enabled": True}  # Control spectrum recording
+    record_spectrum = {"enabled": False}  # Control spectrum recording (default OFF)
     
     def on_connect(client, userdata, flags, rc, properties=None):
         if rc == 0:
