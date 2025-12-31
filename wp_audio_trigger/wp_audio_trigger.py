@@ -1031,54 +1031,58 @@ def main():
             # volles Spektrum (optional, schneller dank kürzerer Blöcke)
             nowm = time.monotonic()
             if args.publish_spectrum and (nowm - last_spec_pub) >= float(args.spectrum_interval):
-                # Energy-based averaging buffer for spectrum
-                if not hasattr(main, '_avg_buffer'):
-                    main._avg_buffer = []
-                avg_buffer = main._avg_buffer
-                avg_buffer.append(x.copy())
-                # Remove old blocks outside averaging window
-                max_avg_blocks = max(1, int(args.averaging_period / float(args.spectrum_interval)))
-                if len(avg_buffer) > max_avg_blocks:
-                    avg_buffer = avg_buffer[-max_avg_blocks:]
-                    main._avg_buffer = avg_buffer
-                # Concatenate all blocks in buffer for averaging
-                if len(avg_buffer) > 0:
-                    x_avg = np.concatenate(avg_buffer)
-                else:
-                    x_avg = x
-                vals=[]
-                energies=[]
-                for fc,sos in sos_full.items():
-                    y=sosfilt(sos,x_avg)
-                    lz=spl_db(np.sqrt(np.mean(y*y)))+corr_full.get(fc,0.0)
-                    if args.spectrum_weighting=="A":
+                # Efficient running average of energies per band
+                if not hasattr(main, '_avg_energy'):
+                    main._avg_energy = {}
+                    main._avg_count = 0
+                avg_energy = main._avg_energy
+                avg_count = main._avg_count
+                alpha = min(1.0, float(args.spectrum_interval) / float(args.averaging_period))
+                vals = []
+                energies = []
+                for fc, sos in sos_full.items():
+                    y = sosfilt(sos, x)
+                    lz = spl_db(np.sqrt(np.mean(y*y))) + corr_full.get(fc, 0.0)
+                    if args.spectrum_weighting == "A":
                         v = lz + a_corr(fc)
-                    elif args.spectrum_weighting=="C":
+                    elif args.spectrum_weighting == "C":
                         v = lz + c_corr(fc)
-                    else:  # Z-weighting (no correction)
+                    else:
                         v = lz
-                    vals.append(round(v, 1))  # Round to 1 decimal place
-                    energies.append(10**(v/10))
+                    energy = 10 ** (v / 10)
+                    # Exponential moving average for each band
+                    if fc not in avg_energy:
+                        avg_energy[fc] = energy
+                    else:
+                        avg_energy[fc] = (1 - alpha) * avg_energy[fc] + alpha * energy
+                    energies.append(avg_energy[fc])
+                    vals.append(round(10 * np.log10(avg_energy[fc]), 1))
+                main._avg_energy = avg_energy
+                main._avg_count += 1
                 # Calculate sum level (energy sum, then convert to dB)
                 sum_level = 10 * np.log10(sum(energies)) if energies else 0.0
                 timestamp = now_utc()
-                payload={
-                    "bands":[str(int(fc)) if fc>=100 else str(fc) for fc in FCS_FULL],
-                    "values":vals,
-                    "sum_level":round(sum_level, 1),
-                    "weighting":args.spectrum_weighting,
+                payload = {
+                    "bands": [str(int(fc)) if fc >= 100 else str(fc) for fc in FCS_FULL],
+                    "values": vals,
+                    "sum_level": round(sum_level, 1),
+                    "weighting": args.spectrum_weighting,
                     "averaging_period": args.averaging_period,
-                    "ts":timestamp,
-                    "time":timestamp
+                    "ts": timestamp,
+                    "time": timestamp
                 }
                 latest_payload.update(payload)
                 # Always publish to spectrum_live for visual display
-                try: client.publish(f"{args.topic_base}/spectrum_live", json.dumps(payload), qos=0)
-                except: pass
+                try:
+                    client.publish(f"{args.topic_base}/spectrum_live", json.dumps(payload), qos=0)
+                except:
+                    pass
                 # Only publish to spectrum (for recording) when enabled
                 if record_spectrum["enabled"]:
-                    try: client.publish(f"{args.topic_base}/spectrum", json.dumps(payload), qos=0)
-                    except: pass
+                    try:
+                        client.publish(f"{args.topic_base}/spectrum", json.dumps(payload), qos=0)
+                    except:
+                        pass
                 last_spec_pub = nowm
 
             # Dynamic Trigger Evaluation
