@@ -1002,9 +1002,9 @@ def main():
         raise RuntimeError("Konnte keinen Audio-Stream öffnen (alle Versuche fehlgeschlagen).")
 
     # -------- Haupt-Loop --------
-    last_spec_pub = 0.0  # monotonic time
-    spectrum_buffer = []
-    spectrum_buffer_times = []
+    last_spec_pub = time.monotonic()  # monotonic time
+    spectrum_publish_buffer = []  # buffer for each publish interval (e.g. 125ms)
+    spectrum_rolling_buffer = []  # rolling buffer for averaging period
     try:
         while True:
             x, _ = stream.read(block_samples)
@@ -1031,11 +1031,8 @@ def main():
             rec={"ts":now_utc(),"LZ":LZ,"LA":LA}
             spec_buf.append(rec)  # Always buffer spectrum data for events
 
-            # --- Buffer spectrum_live for averaging period ---
-            # Calculate spectrum_live for this block
-            spectrum_live = {}
-            energies = []
-            vals = []
+            # --- Calculate spectrum for this publish interval ---
+            spectrum_block = {}
             for fc, sos in sos_full.items():
                 y = sosfilt(sos, x)
                 lz = spl_db(np.sqrt(np.mean(y*y))) + corr_full.get(fc, 0.0)
@@ -1046,40 +1043,30 @@ def main():
                 else:
                     v = lz
                 energy = 10 ** (v / 10)
-                spectrum_live[fc] = energy
-                energies.append(energy)
-                vals.append(round(10 * np.log10(energy), 1))
-            sum_level_live = 10 * np.log10(sum(energies)) if energies else 0.0
-            timestamp = now_utc()
-            payload_live = {
-                "bands": [str(int(fc)) if fc >= 100 else str(fc) for fc in FCS_FULL],
-                "values": vals,
-                "sum_level": round(sum_level_live, 1),
-                "weighting": args.spectrum_weighting,
-                "averaging_period": args.averaging_period,
-                "ts": timestamp,
-                "time": timestamp
-            }
-            latest_payload.update(payload_live)
-            # Always publish to spectrum_live for visual display (every sample interval)
-            try:
-                client.publish(f"{args.topic_base}/spectrum_live", json.dumps(payload_live), qos=0)
-            except:
-                pass
+                spectrum_block[fc] = energy
+            spectrum_publish_buffer.append(spectrum_block)
 
-            # Buffer for averaging
-            spectrum_buffer.append(spectrum_live)
-            spectrum_buffer_times.append(time.monotonic())
-
-            # Check if averaging period has elapsed
-            if spectrum_buffer_times and (spectrum_buffer_times[-1] - spectrum_buffer_times[0]) >= float(args.averaging_period):
-                # Average energies per band
+            # Check if publish interval has elapsed
+            now_mono = time.monotonic()
+            if (now_mono - last_spec_pub) >= float(args.spectrum_interval):
+                # Average over this publish interval
                 avg_energies = {}
                 for fc in FCS_FULL:
-                    fc_energies = [buf[fc] for buf in spectrum_buffer if fc in buf]
+                    fc_energies = [buf[fc] for buf in spectrum_publish_buffer if fc in buf]
                     avg_energies[fc] = np.mean(fc_energies) if fc_energies else 0.0
-                avg_vals = [round(10 * np.log10(avg_energies[fc]), 1) if avg_energies[fc] > 0 else 0.0 for fc in FCS_FULL]
-                sum_level = 10 * np.log10(sum(avg_energies.values())) if avg_energies and sum(avg_energies.values()) > 0 else 0.0
+                # Add to rolling buffer
+                spectrum_rolling_buffer.append(avg_energies.copy())
+                # Limit rolling buffer to N = averaging_period / publish_interval
+                maxlen = int(round(float(args.averaging_period) / float(args.spectrum_interval)))
+                if len(spectrum_rolling_buffer) > maxlen:
+                    spectrum_rolling_buffer = spectrum_rolling_buffer[-maxlen:]
+                # Calculate rolling average for output
+                rolling_avg_energies = {}
+                for fc in FCS_FULL:
+                    fc_energies = [buf[fc] for buf in spectrum_rolling_buffer if fc in buf]
+                    rolling_avg_energies[fc] = np.mean(fc_energies) if fc_energies else 0.0
+                avg_vals = [round(10 * np.log10(rolling_avg_energies[fc]), 1) if rolling_avg_energies[fc] > 0 else 0.0 for fc in FCS_FULL]
+                sum_level = 10 * np.log10(sum(rolling_avg_energies.values())) if rolling_avg_energies and sum(rolling_avg_energies.values()) > 0 else 0.0
                 timestamp_avg = now_utc()
                 payload_avg = {
                     "bands": [str(int(fc)) if fc >= 100 else str(fc) for fc in FCS_FULL],
@@ -1090,15 +1077,20 @@ def main():
                     "ts": timestamp_avg,
                     "time": timestamp_avg
                 }
-                # Only publish/store averaged spectrum every averaging period
+                latest_payload.update(payload_avg)
+                # Publish rolling average as both live and averaged
+                try:
+                    client.publish(f"{args.topic_base}/spectrum_live", json.dumps(payload_avg), qos=0)
+                except:
+                    pass
                 if record_spectrum["enabled"]:
                     try:
                         client.publish(f"{args.topic_base}/spectrum", json.dumps(payload_avg), qos=0)
                     except:
                         pass
-                # Reset buffer for next period
-                spectrum_buffer = []
-                spectrum_buffer_times = []
+                # Reset publish buffer and update last publish time
+                spectrum_publish_buffer = []
+                last_spec_pub = now_mono
 
             # Dynamic Trigger Evaluation
             triggers = analyzer_config.get("triggers", [])
