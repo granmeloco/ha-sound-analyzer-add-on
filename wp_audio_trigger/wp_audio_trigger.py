@@ -281,24 +281,25 @@ const freqBands={
 };
 
 function updateFrequencyDropdowns(){
-  const bands=document.getElementById('b1oct').checked?'1octave':
-              document.getElementById('b2oct').checked?'2octave':'3octave';
-  const minFreq=parseFloat(document.getElementById('minFreq').value)||31.5;
-  const maxFreq=parseFloat(document.getElementById('maxFreq').value)||20000;
-  const freqs=freqBands[bands].filter(f=>f>=minFreq && f<=maxFreq);
+    const bands=document.getElementById('b1oct').checked?'1octave':
+                            document.getElementById('b2oct').checked?'2octave':'3octave';
+    const minFreq=parseFloat(document.getElementById('minFreq').value)||31.5;
+    const maxFreq=parseFloat(document.getElementById('maxFreq').value)||20000;
+    const freqs=freqBands[bands].filter(f=>f>=minFreq && f<=maxFreq);
   
-  for(let i=1;i<=4;i++){
-    const sel=document.getElementById(`t${i}freq`);
-    const currentVal=parseFloat(sel.value);
-    sel.innerHTML='<option value="">-- None --</option>'+
-      freqs.map(f=>`<option value="${f}">${f>=100?Math.round(f):f} Hz</option>`).join('');
-    // Only restore value if it exists in the new frequency list
-    if(currentVal && freqs.includes(currentVal)){
-      sel.value=currentVal;
-    }else{
-      sel.value='';  // Reset to blank if frequency not available
+    for(let i=1;i<=4;i++){
+        const sel=document.getElementById(`t${i}freq`);
+        const currentVal=sel.value;
+        sel.innerHTML='<option value="">-- None --</option>'+
+            '<option value="sum">Summe</option>'+
+            freqs.map(f=>`<option value="${f}">${f>=100?Math.round(f):f} Hz</option>`).join('');
+        // Only restore value if it exists in the new frequency list or is 'sum'
+        if(currentVal && (freqs.map(String).includes(currentVal) || currentVal==='sum')){
+            sel.value=currentVal;
+        }else{
+            sel.value='';  // Reset to blank if frequency not available
+        }
     }
-  }
 }
 
 // Load configuration
@@ -354,12 +355,12 @@ function saveConfig(){
     publishInterval:parseFloat(document.getElementById('publishInterval').value)||1,
     dbWeighting:document.getElementById('dbWeighting').value||'A',
     averagingPeriod:parseFloat(document.getElementById('averagingPeriod').value)||2,
-    triggers:[
-      {freq:parseInt(document.getElementById('t1freq').value)||0,amp:parseFloat(document.getElementById('t1amp').value)||0,duration:parseFloat(document.getElementById('t1dur').value)||0},
-      {freq:parseInt(document.getElementById('t2freq').value)||0,amp:parseFloat(document.getElementById('t2amp').value)||0,duration:parseFloat(document.getElementById('t2dur').value)||0},
-      {freq:parseInt(document.getElementById('t3freq').value)||0,amp:parseFloat(document.getElementById('t3amp').value)||0,duration:parseFloat(document.getElementById('t3dur').value)||0},
-      {freq:parseInt(document.getElementById('t4freq').value)||0,amp:parseFloat(document.getElementById('t4amp').value)||0,duration:parseFloat(document.getElementById('t4dur').value)||0}
-    ],
+        triggers:[
+            {freq:document.getElementById('t1freq').value,amp:parseFloat(document.getElementById('t1amp').value)||0,duration:parseFloat(document.getElementById('t1dur').value)||0},
+            {freq:document.getElementById('t2freq').value,amp:parseFloat(document.getElementById('t2amp').value)||0,duration:parseFloat(document.getElementById('t2dur').value)||0},
+            {freq:document.getElementById('t3freq').value,amp:parseFloat(document.getElementById('t3amp').value)||0,duration:parseFloat(document.getElementById('t3dur').value)||0},
+            {freq:document.getElementById('t4freq').value,amp:parseFloat(document.getElementById('t4amp').value)||0,duration:parseFloat(document.getElementById('t4dur').value)||0}
+        ],
     logic:document.getElementById('logicOr').checked?'OR':'AND',
     storageLocation:document.getElementById('storageLocation').value,
     preBuffer:parseInt(document.getElementById('preBuffer').value)||10,
@@ -1115,51 +1116,86 @@ def main():
                         print(f"[wp-audio] DEBUG: Trigger config = {triggers}, Logic = {logic}", flush=True)
                 start_event.last_amp_log = time.time()
             
-            # Only evaluate triggers that are actually configured (freq > 0 and amp > 0)
-            active_trigger_count = sum(1 for t in triggers if t.get("freq", 0) > 0 and t.get("amp", 0) > 0)
-            
+            # Only evaluate triggers that are actually configured (freq or 'sum') and amp > 0
+            active_trigger_count = sum(1 for t in triggers if (t.get("freq") and t.get("amp", 0) > 0))
+
             for trig in triggers:
-                freq = trig.get("freq", 0)
+                freq = trig.get("freq")
                 amp = trig.get("amp", 0)
-                if freq > 0 and amp > 0:
-                    if freq in LA:
-                        is_triggered = LA[freq] >= amp
+                if freq and amp > 0:
+                    if freq == "sum":
+                        # Use sum_level for 'Summe'
+                        sum_level = latest_payload.get("sum_level")
+                        is_triggered = sum_level is not None and sum_level >= amp
                         trigger_results.append(is_triggered)
                         if is_triggered:
-                            print(f"[wp-audio] TRIGGER ACTIVATED: {freq}Hz @ {LA[freq]:.1f} dB (threshold {amp:.1f} dB)", flush=True)
+                            print(f"[wp-audio] TRIGGER ACTIVATED: Summe @ {sum_level:.1f} dB (threshold {amp:.1f} dB)", flush=True)
+                        # Track trigger state changes for 'sum'
+                        if is_triggered:
+                            if "sum" not in trigger_states:
+                                trigger_states["sum"] = {"start_time": current_time, "start_amp": sum_level}
+                                print(f"[wp-audio] Trigger ACTIVE: Summe @ {sum_level:.1f} dB (threshold {amp:.1f} dB)", flush=True)
+                        else:
+                            if "sum" in trigger_states:
+                                start_info = trigger_states["sum"]
+                                try:
+                                    from datetime import datetime
+                                    start_dt = datetime.fromisoformat(start_info["start_time"].replace('Z', '+00:00'))
+                                    end_dt = datetime.fromisoformat(current_time.replace('Z', '+00:00'))
+                                    duration = (end_dt - start_dt).total_seconds()
+                                except:
+                                    duration = 0.0
+                                log_entry = {
+                                    "time": start_info["start_time"],
+                                    "frequency": "sum",
+                                    "amplitude": round(start_info["start_amp"], 2),
+                                    "duration": round(duration, 2)
+                                }
+                                trigger_log.append(log_entry)
+                                print(f"[wp-audio] Trigger logged: Summe, {start_info['start_amp']:.1f} dB, {duration:.2f}s", flush=True)
+                                del trigger_states["sum"]
                     else:
-                        print(f"[wp-audio] WARNING: Trigger frequency {freq} Hz not found in current bands. Available: {sorted(LA.keys())}", flush=True)
-                    
-                    # Track trigger state changes
-                    if is_triggered:
-                        if freq not in trigger_states:
-                            # Trigger just activated
-                            trigger_states[freq] = {"start_time": current_time, "start_amp": LA[freq]}
-                            print(f"[wp-audio] Trigger ACTIVE: {freq} Hz @ {LA[freq]:.1f} dB (threshold {amp:.1f} dB)", flush=True)
-                    else:
-                        if freq in trigger_states:
-                            # Trigger just deactivated - log it
-                            start_info = trigger_states[freq]
-                            try:
-                                from datetime import datetime
-                                start_dt = datetime.fromisoformat(start_info["start_time"].replace('Z', '+00:00'))
-                                end_dt = datetime.fromisoformat(current_time.replace('Z', '+00:00'))
-                                duration = (end_dt - start_dt).total_seconds()
-                            except:
-                                duration = 0.0
-                            
-                            log_entry = {
-                                "time": start_info["start_time"],
-                                "frequency": freq,
-                                "amplitude": round(start_info["start_amp"], 2),
-                                "duration": round(duration, 2)
-                            }
-                            trigger_log.append(log_entry)
-                            print(f"[wp-audio] Trigger logged: {freq} Hz, {start_info['start_amp']:.1f} dB, {duration:.2f}s", flush=True)
-                            del trigger_states[freq]
+                        try:
+                            freq_val = float(freq)
+                        except:
+                            continue
+                        if freq_val in LA:
+                            is_triggered = LA[freq_val] >= amp
+                            trigger_results.append(is_triggered)
+                            if is_triggered:
+                                print(f"[wp-audio] TRIGGER ACTIVATED: {freq_val}Hz @ {LA[freq_val]:.1f} dB (threshold {amp:.1f} dB)", flush=True)
+                        else:
+                            print(f"[wp-audio] WARNING: Trigger frequency {freq_val} Hz not found in current bands. Available: {sorted(LA.keys())}", flush=True)
+                        # Track trigger state changes
+                        if is_triggered:
+                            if freq_val not in trigger_states:
+                                trigger_states[freq_val] = {"start_time": current_time, "start_amp": LA[freq_val]}
+                                print(f"[wp-audio] Trigger ACTIVE: {freq_val} Hz @ {LA[freq_val]:.1f} dB (threshold {amp:.1f} dB)", flush=True)
+                        else:
+                            if freq_val in trigger_states:
+                                start_info = trigger_states[freq_val]
+                                try:
+                                    from datetime import datetime
+                                    start_dt = datetime.fromisoformat(start_info["start_time"].replace('Z', '+00:00'))
+                                    end_dt = datetime.fromisoformat(current_time.replace('Z', '+00:00'))
+                                    duration = (end_dt - start_dt).total_seconds()
+                                except:
+                                    duration = 0.0
+                                log_entry = {
+                                    "time": start_info["start_time"],
+                                    "frequency": freq_val,
+                                    "amplitude": round(start_info["start_amp"], 2),
+                                    "duration": round(duration, 2)
+                                }
+                                trigger_log.append(log_entry)
+                                print(f"[wp-audio] Trigger logged: {freq_val} Hz, {start_info['start_amp']:.1f} dB, {duration:.2f}s", flush=True)
+                                del trigger_states[freq_val]
             
             # Apply logic (OR = any trigger, AND = all triggers)
-            if logic == "AND":
+            # If no valid triggers, do not trigger any event
+            if active_trigger_count == 0:
+                trigger_event = False
+            elif logic == "AND":
                 trigger_event = all(trigger_results) if trigger_results else False
             else:  # OR (default)
                 trigger_event = any(trigger_results) if trigger_results else False
