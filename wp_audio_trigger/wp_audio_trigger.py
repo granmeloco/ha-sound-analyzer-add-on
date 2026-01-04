@@ -1204,7 +1204,14 @@ def main():
             # For AND logic: use maximum duration among all configured triggers
             # For OR logic: use minimum duration among active triggers
             required_duration = args.hold_sec  # fallback to default 2s
-            trigger_durations = [trig.get("duration", 0) for trig in triggers if trig.get("freq", 0) > 0 and trig.get("amp", 0) > 0]
+            trigger_durations = [
+                trig.get("duration", 0)
+                for trig in triggers
+                if trig.get("amp", 0) > 0 and (
+                    (trig.get("freq") == "sum") or
+                    (trig.get("freq") and str(trig.get("freq")).replace('.', '', 1).isdigit())
+                )
+            ]
             if trigger_durations:
                 if logic == "AND":
                     required_duration = max(trigger_durations) if trigger_durations else args.hold_sec
