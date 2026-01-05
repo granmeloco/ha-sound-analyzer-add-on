@@ -189,17 +189,25 @@ button:hover{background:#138496}
     <input type=number id=t4amp placeholder="" step=0.1>
     <input type=number id=t4dur placeholder="" step=0.1>
   </div>
-  <div class=row>
-    <span class=field-label>Logical constraint:</span>
-    <div class=radio-group>
-      <input type=radio name=logic id=logicAnd value=AND checked>
-      <label for=logicAnd>AND</label>
+    <div class=trigger-grid>
+        <span class=field-label>5.</span>
+        <span>
+            Prominent frequency
+            <select id=promFreq style="padding:5px 8px;border:1px solid #999;font-size:13px;width:100px;background:white"></select>
+            for <input type=number id=promDur placeholder="" step=0.1 style="width:60px"> s
+        </span>
     </div>
-    <div class=radio-group>
-      <input type=radio name=logic id=logicOr value=OR>
-      <label for=logicOr>OR</label>
+    <div class=row>
+        <span class=field-label>Logical constraint:</span>
+        <div class=radio-group>
+            <input type=radio name=logic id=logicAnd value=AND checked>
+            <label for=logicAnd>AND</label>
+        </div>
+        <div class=radio-group>
+            <input type=radio name=logic id=logicOr value=OR>
+            <label for=logicOr>OR</label>
+        </div>
     </div>
-  </div>
 </div>
 
 <div class=section>
@@ -300,6 +308,16 @@ function updateFrequencyDropdowns(){
             sel.value='';  // Reset to blank if frequency not available
         }
     }
+    // Update prominent frequency dropdown
+    const promSel=document.getElementById('promFreq');
+    const promVal=promSel.value;
+    promSel.innerHTML='<option value="">-- None --</option>'+
+        freqs.map(f=>`<option value="${f}">${f>=100?Math.round(f):f} Hz</option>`).join('');
+    if(promVal && freqs.map(String).includes(promVal)){
+        promSel.value=promVal;
+    }else{
+        promSel.value='';
+    }
 }
 
 // Load configuration
@@ -315,11 +333,14 @@ fetch('api/config').then(r=>r.json()).then(data=>{
   
   updateFrequencyDropdowns();
   
-  for(let i=1;i<=4;i++){
-    document.getElementById(`t${i}freq`).value=data.triggers[i-1]?.freq||'';
-    document.getElementById(`t${i}amp`).value=data.triggers[i-1]?.amp||'';
-    document.getElementById(`t${i}dur`).value=data.triggers[i-1]?.duration||'';
-  }
+    for(let i=1;i<=4;i++){
+        document.getElementById(`t${i}freq`).value=data.triggers[i-1]?.freq||'';
+        document.getElementById(`t${i}amp`).value=data.triggers[i-1]?.amp||'';
+        document.getElementById(`t${i}dur`).value=data.triggers[i-1]?.duration||'';
+    }
+    // Prominent frequency trigger
+    document.getElementById('promFreq').value = data.prominentTrigger?.freq || '';
+    document.getElementById('promDur').value = data.prominentTrigger?.duration || '';
   
   if(data.logic==='OR') document.getElementById('logicOr').checked=true;
   else document.getElementById('logicAnd').checked=true;
@@ -361,6 +382,10 @@ function saveConfig(){
             {freq:document.getElementById('t3freq').value,amp:parseFloat(document.getElementById('t3amp').value)||0,duration:parseFloat(document.getElementById('t3dur').value)||0},
             {freq:document.getElementById('t4freq').value,amp:parseFloat(document.getElementById('t4amp').value)||0,duration:parseFloat(document.getElementById('t4dur').value)||0}
         ],
+        prominentTrigger: {
+            freq: document.getElementById('promFreq').value,
+            duration: parseFloat(document.getElementById('promDur').value)||0
+        },
     logic:document.getElementById('logicOr').checked?'OR':'AND',
     storageLocation:document.getElementById('storageLocation').value,
     preBuffer:parseInt(document.getElementById('preBuffer').value)||10,
@@ -1123,13 +1148,13 @@ def main():
                 amp = trig.get("amp", 0)
                 if freq and amp > 0:
                     if freq == "sum":
-                        # Use sum_level for 'Summe'
+                        # ...existing code for 'sum' trigger...
                         sum_level = latest_payload.get("sum_level")
                         is_triggered = sum_level is not None and sum_level >= amp
                         trigger_results.append(is_triggered)
                         if is_triggered:
                             print(f"[wp-audio] TRIGGER ACTIVATED: Summe @ {sum_level:.1f} dB (threshold {amp:.1f} dB)", flush=True)
-                        # Track trigger state changes for 'sum'
+                        # ...existing code for state tracking...
                         if is_triggered:
                             if "sum" not in trigger_states:
                                 trigger_states["sum"] = {"start_time": current_time, "start_amp": sum_level}
@@ -1165,7 +1190,7 @@ def main():
                                 print(f"[wp-audio] TRIGGER ACTIVATED: {freq_val}Hz @ {LA[freq_val]:.1f} dB (threshold {amp:.1f} dB)", flush=True)
                         else:
                             print(f"[wp-audio] WARNING: Trigger frequency {freq_val} Hz not found in current bands. Available: {sorted(LA.keys())}", flush=True)
-                        # Track trigger state changes
+                        # ...existing code for state tracking...
                         if is_triggered:
                             if freq_val not in trigger_states:
                                 trigger_states[freq_val] = {"start_time": current_time, "start_amp": LA[freq_val]}
@@ -1189,6 +1214,29 @@ def main():
                                 trigger_log.append(log_entry)
                                 print(f"[wp-audio] Trigger logged: {freq_val} Hz, {start_info['start_amp']:.1f} dB, {duration:.2f}s", flush=True)
                                 del trigger_states[freq_val]
+
+            # --- Prominent frequency trigger (No. 5) ---
+            prom_trig = analyzer_config.get("prominentTrigger", {})
+            prom_freq = prom_trig.get("freq")
+            prom_dur = prom_trig.get("duration", 0)
+            if prom_freq:
+                try:
+                    prom_freq_val = float(prom_freq)
+                except:
+                    prom_freq_val = None
+                if prom_freq_val and prom_freq_val in LA:
+                    # Use a buffer to track how long the selected freq is most prominent
+                    if not hasattr(main, "prominent_buffer"):
+                        main.prominent_buffer = deque(maxlen=max(1, int(prom_dur/block_sec)))
+                    # Is selected freq the max?
+                    is_prominent = all(LA[prom_freq_val] > LA[f] for f in LA if f != prom_freq_val)
+                    main.prominent_buffer.append(is_prominent)
+                    # Only trigger if it has been true for the whole duration
+                    if len(main.prominent_buffer) == main.prominent_buffer.maxlen and all(main.prominent_buffer):
+                        trigger_results.append(True)
+                        print(f"[wp-audio] TRIGGER ACTIVATED: Prominent frequency {prom_freq_val} Hz for {prom_dur}s", flush=True)
+                    else:
+                        trigger_results.append(False)
             
             # Apply logic (OR = any trigger, AND = all triggers)
             # If no valid triggers, do not trigger any event
