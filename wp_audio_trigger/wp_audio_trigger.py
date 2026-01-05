@@ -210,7 +210,7 @@ button:hover{background:#138496}
     <button class=browse-btn onclick="browseFolder()">Browse...</button>
   </div>
   <div class=row>
-    <span class=field-label>Pre-buffer time [s]</span>
+    <span class=field-label>Pre and Post Buffer Time [s]</span>
     <input type=number id=preBuffer placeholder="" step=1>
   </div>
   <div class=row>
@@ -325,7 +325,7 @@ fetch('api/config').then(r=>r.json()).then(data=>{
   else document.getElementById('logicAnd').checked=true;
   
   document.getElementById('storageLocation').value=data.storageLocation||'/media/wp_audio/events';
-  document.getElementById('preBuffer').value=data.preBuffer||10;
+    document.getElementById('preBuffer').value=data.preBuffer||10;
   document.getElementById('recLength').value=data.recLength||'';
   
     document.getElementById('cal31_5').value=data.calibration?.cal31_5||'';
@@ -678,6 +678,7 @@ def main():
     
     # All analysis settings come from analyzer_config (UI)
     args.pre = analyzer_config.get("preBuffer", 10)
+    args.post = analyzer_config.get("preBuffer", 10)  # Use same value for post-buffer
     args.post = 30  # Fixed post-trigger time
     args.hold_sec = 2  # Fixed hold time (minimum duration for trigger to be active)
     args.event_dir = analyzer_config.get("storageLocation", "/media/wp_audio/events")
@@ -855,6 +856,8 @@ def main():
 
     pre_buf=deque(maxlen=max(1,int(args.pre/block_sec)))
     spec_buf=deque(maxlen=max(1,int(args.pre/block_sec)))  # Ring buffer for spectrum data
+    post_buf_audio=deque(maxlen=max(1,int(args.post/block_sec)))
+    post_buf_spec=deque(maxlen=max(1,int(args.post/block_sec)))
     S = {"trig": False, "hold": 0, "post_left": 0, "peak80": -999.0, "peak160": -999.0,
          "cur_dir": None, "event_audio": [], "event_specs": [], "overall_dbA": [],
          "event_start_time": None, "actual_duration": 0, "recording_stopped": False}
@@ -904,7 +907,8 @@ def main():
                 "triggers": analyzer_config.get("triggers", []),
                 "logic": analyzer_config.get("logic", "OR"),
                 "preBuffer": analyzer_config.get("preBuffer", 10),
-                "recLength": analyzer_config.get("recLength", 30)
+                "recLength": analyzer_config.get("recLength", 30),
+                "preAndPostBuffer": analyzer_config.get("preBuffer", 10)
             },
             "statistics": {
                 "max_overall_dbA": round(max_overall_dbA, 2),
@@ -1030,6 +1034,9 @@ def main():
             pre_buf.append(x.copy())
             rec={"ts":now_utc(),"LZ":LZ,"LA":LA}
             spec_buf.append(rec)  # Always buffer spectrum data for events
+            # Always fill post buffers as well (they will be used only after trigger ends)
+            post_buf_audio.append(x.copy())
+            post_buf_spec.append(rec)
 
             # --- Calculate spectrum for this publish interval ---
             spectrum_block = {}
@@ -1225,53 +1232,43 @@ def main():
                     S["hold"]+=block_sec
                     print(f"[wp-audio] Accumulating hold time: {S['hold']:.2f}s / {required_duration:.2f}s", flush=True)
                     if S["hold"]>=required_duration:
-                        S["trig"]=True; S["post_left"]=rec_length
+                        S["trig"]=True; S["post_left"]=args.post
                         S["cur_dir"]=os.path.join(storage_dir, now_utc()); os.makedirs(S["cur_dir"], exist_ok=True)
                         S["event_audio"]=list(pre_buf); S["event_specs"]=list(spec_buf); S["peak80"]=-999.0; S["peak160"]=-999.0; S["overall_dbA"]=[]
                         S["event_start_time"]=time.time(); S["actual_duration"]=0; S["recording_stopped"]=False
                         print(f"[wp-audio] Event START {S['cur_dir']} (Pre-buffer: {len(pre_buf)} audio blocks, {len(spec_buf)} spectrum blocks)")
                         S["hold"]=0
+                        # Clear post buffers at event start
+                        post_buf_audio.clear()
+                        post_buf_spec.clear()
                 else:
                     S["hold"]=0
             else:
                 # Track actual event duration
                 S["actual_duration"] = time.time() - S["event_start_time"]
-                
-                # Only record audio/spectrum if we haven't exceeded recording length
-                if not S["recording_stopped"]:
-                    S["event_audio"].append(x.copy()); S["event_specs"].append(rec)
-                    S["peak80"]=max(S["peak80"],la80); S["peak160"]=max(S["peak160"],la160)
-                    
-                    # Calculate overall dB(A) from all frequency bands (energy sum)
-                    # Convert dB to linear, sum energy, convert back to dB
-                    total_energy = sum(10**(la/10) for la in LA.values())
-                    overall_dbA = 10 * np.log10(total_energy) if total_energy > 0 else 0.0
-                    S["overall_dbA"].append(overall_dbA)
-                    
-                    # Check if we've reached configured recording length - save immediately
-                    if S["actual_duration"] >= rec_length:
-                        S["recording_stopped"] = True
-                        print(f"[wp-audio] Recording limit reached ({rec_length}s), saving files now...", flush=True)
-                        end_event(current_fs)
-                        # Note: Event will continue tracking duration until trigger ends
-                
-                # Continue tracking total event duration even after recording stopped
+                # Always append to event buffers during event
+                S["event_audio"].append(x.copy()); S["event_specs"].append(rec)
+                S["peak80"]=max(S["peak80"],la80); S["peak160"]=max(S["peak160"],la160)
+                # Calculate overall dB(A) from all frequency bands (energy sum)
+                total_energy = sum(10**(la/10) for la in LA.values())
+                overall_dbA = 10 * np.log10(total_energy) if total_energy > 0 else 0.0
+                S["overall_dbA"].append(overall_dbA)
+                # If trigger ended, start/continue post-buffering
                 if not trigger_event:
-                    # Trigger ended, check if we need to finalize (only if not already saved)
-                    if S["trig"]:  # Still in event state but trigger dropped
-                        S["post_left"]-=block_sec
-                        if S["post_left"]<=0:
-                            # This handles the case where recording was already saved but we're tracking duration
-                            if not S["recording_stopped"]:
-                                print(f"[wp-audio] DEBUG: Trigger ended, calling end_event, cur_dir={S['cur_dir']}, actual_duration={S['actual_duration']:.1f}s", flush=True)
-                                end_event(current_fs)
-                            else:
-                                # Already saved, just reset state
-                                print(f"[wp-audio] Event tracking ended. Total duration: {S['actual_duration']:.1f}s", flush=True)
-                                S["trig"]=False; S["hold"]=0
+                    S["post_left"]-=block_sec
+                    # Append post-buffer data
+                    S["event_audio"].append(post_buf_audio[-1].copy() if post_buf_audio else x.copy())
+                    S["event_specs"].append(post_buf_spec[-1].copy() if post_buf_spec else rec.copy())
+                    if S["post_left"]<=0:
+                        if not S["recording_stopped"]:
+                            print(f"[wp-audio] DEBUG: Trigger ended, calling end_event, cur_dir={S['cur_dir']}, actual_duration={S['actual_duration']:.1f}s", flush=True)
+                            end_event(current_fs)
+                        else:
+                            print(f"[wp-audio] Event tracking ended. Total duration: {S['actual_duration']:.1f}s", flush=True)
+                            S["trig"]=False; S["hold"]=0
                 else:
                     # Trigger still active, reset post timer
-                    S["post_left"]=rec_length
+                    S["post_left"]=args.post
 
     finally:
         try:
