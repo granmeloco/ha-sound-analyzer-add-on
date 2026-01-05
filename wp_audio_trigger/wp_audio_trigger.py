@@ -891,13 +891,14 @@ def main():
     corr_low  = build_interpolated_corr(band_corr, FCS_LOW)
     corr_full = build_interpolated_corr(band_corr, FCS_FULL)
 
-    pre_buf=deque(maxlen=max(1,int(args.pre/block_sec)))
-    spec_buf=deque(maxlen=max(1,int(args.pre/block_sec)))  # Ring buffer for spectrum data
-    post_buf_audio=deque(maxlen=max(1,int(args.post/block_sec)))
-    post_buf_spec=deque(maxlen=max(1,int(args.post/block_sec)))
-    S = {"trig": False, "hold": 0, "post_left": 0, "peak80": -999.0, "peak160": -999.0,
-         "cur_dir": None, "event_audio": [], "event_specs": [], "overall_dbA": [],
-         "event_start_time": None, "actual_duration": 0, "recording_stopped": False}
+        pre_buf=deque(maxlen=max(1,int(args.pre/block_sec)))
+        spec_buf=deque(maxlen=max(1,int(args.pre/block_sec)))  # Ring buffer for spectrum data
+        post_buf_audio=deque(maxlen=max(1,int(args.post/block_sec)))
+        post_buf_spec=deque(maxlen=max(1,int(args.post/block_sec)))
+        S = {"trig": False, "hold": 0, "post_left": 0, "peak80": -999.0, "peak160": -999.0,
+            "cur_dir": None, "event_audio": [], "event_specs": [], "overall_dbA": [],
+            "event_start_time": None, "actual_duration": 0, "recording_stopped": False,
+            "hold_start_idx": None, "hold_start_time": None}
     os.makedirs(args.event_dir, exist_ok=True)
     
     # Trigger logging
@@ -1311,23 +1312,37 @@ def main():
             
             if not S["trig"]:
                 if trigger_event:
+                    if S["hold"] == 0:
+                        # Mark the index and time when the hold period starts
+                        S["hold_start_idx"] = len(pre_buf)
+                        S["hold_start_time"] = time.time()
                     S["hold"]+=block_sec
                     print(f"[wp-audio] Accumulating hold time: {S['hold']:.2f}s / {required_duration:.2f}s", flush=True)
                     if S["hold"]>=required_duration:
                         S["trig"]=True; S["post_left"]=args.post
+                        # Calculate the start index for the event in the pre-buffer
+                        pre_buf_list = list(pre_buf)
+                        spec_buf_list = list(spec_buf)
+                        # The event should start at (len(pre_buf) - int(args.pre/block_sec) + S["hold_start_idx"]) if possible
+                        event_audio = pre_buf_list[S["hold_start_idx"]:] if S["hold_start_idx"] is not None else pre_buf_list
+                        event_specs = spec_buf_list[S["hold_start_idx"]:] if S["hold_start_idx"] is not None else spec_buf_list
                         S["cur_dir"]=os.path.join(storage_dir, now_utc()); os.makedirs(S["cur_dir"], exist_ok=True)
-                        S["event_audio"]=list(pre_buf); S["event_specs"]=list(spec_buf); S["peak80"]=-999.0; S["peak160"]=-999.0; S["overall_dbA"]=[]
-                        S["event_start_time"]=time.time(); S["actual_duration"]=0; S["recording_stopped"]=False
-                        print(f"[wp-audio] Event START {S['cur_dir']} (Pre-buffer: {len(pre_buf)} audio blocks, {len(spec_buf)} spectrum blocks)")
+                        S["event_audio"]=event_audio; S["event_specs"]=event_specs; S["peak80"]=-999.0; S["peak160"]=-999.0; S["overall_dbA"]=[]
+                        S["event_start_time"]=S["hold_start_time"] if S["hold_start_time"] is not None else time.time(); S["actual_duration"]=0; S["recording_stopped"]=False
+                        print(f"[wp-audio] Event START {S['cur_dir']} (Pre-buffer: {len(event_audio)} audio blocks, {len(event_specs)} spectrum blocks)")
                         S["hold"]=0
+                        S["hold_start_idx"] = None
+                        S["hold_start_time"] = None
                         # Clear post buffers at event start
                         post_buf_audio.clear()
                         post_buf_spec.clear()
                 else:
                     S["hold"]=0
+                    S["hold_start_idx"] = None
+                    S["hold_start_time"] = None
             else:
                 # Track actual event duration
-                S["actual_duration"] = time.time() - S["event_start_time"]
+                S["actual_duration"] = time.time() - S["event_start_time"] if S["event_start_time"] is not None else 0
                 # Always append to event buffers during event
                 S["event_audio"].append(x.copy()); S["event_specs"].append(rec)
                 S["peak80"]=max(S["peak80"],la80); S["peak160"]=max(S["peak160"],la160)
@@ -1338,16 +1353,18 @@ def main():
                 # If trigger ended, start/continue post-buffering
                 if not trigger_event:
                     S["post_left"]-=block_sec
-                    # Append post-buffer data
-                    S["event_audio"].append(post_buf_audio[-1].copy() if post_buf_audio else x.copy())
-                    S["event_specs"].append(post_buf_spec[-1].copy() if post_buf_spec else rec.copy())
-                    if S["post_left"]<=0:
+                    # Append all post-buffer data when post buffer is full or post_left <= 0
+                    if S["post_left"] <= 0:
+                        # Append the entire post buffer to the event
+                        S["event_audio"].extend(list(post_buf_audio))
+                        S["event_specs"].extend(list(post_buf_spec))
                         if not S["recording_stopped"]:
                             print(f"[wp-audio] DEBUG: Trigger ended, calling end_event, cur_dir={S['cur_dir']}, actual_duration={S['actual_duration']:.1f}s", flush=True)
                             end_event(current_fs)
                         else:
                             print(f"[wp-audio] Event tracking ended. Total duration: {S['actual_duration']:.1f}s", flush=True)
                             S["trig"]=False; S["hold"]=0
+                    # Otherwise, keep filling the post buffer
                 else:
                     # Trigger still active, reset post timer
                     S["post_left"]=args.post
