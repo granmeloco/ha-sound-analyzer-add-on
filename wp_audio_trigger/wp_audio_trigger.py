@@ -914,12 +914,27 @@ def main():
         if not S["cur_dir"]: return
         audio=np.concatenate(S["event_audio"],axis=0) if S["event_audio"] else np.zeros(0,np.float32)
         wav=os.path.join(S["cur_dir"],"audio.flac"); sf.write(wav, audio, int(current_fs), format="FLAC")
-        csv=os.path.join(S["cur_dir"],"spectrum.csv")
-        with open(csv,"w") as f:
-            f.write("ts,"+",".join([f"LZ_{fc}" for fc in FCS_LOW])+","+",".join([f"LA_{fc}" for fc in FCS_LOW])+"\n")
+        csv = os.path.join(S["cur_dir"], "spectrum.csv")
+        # Determine which weighting to record based on config
+        weighting = analyzer_config.get("dbWeighting", "A")
+        if weighting == "A":
+            col_prefix = "LA"
+        elif weighting == "Z":
+            col_prefix = "LZ"
+        elif weighting == "D":
+            col_prefix = "LD"
+        else:
+            col_prefix = "LA"  # fallback
+        with open(csv, "w") as f:
+            f.write("ts," + ",".join([f"{col_prefix}_{fc}" for fc in FCS_LOW]) + f",{col_prefix}_sum\n")
             for r in S["event_specs"]:
-                f.write(r["ts"]+","+",".join(f"{r['LZ'][fc]:.2f}" for fc in FCS_LOW)+","+
-                        ",".join(f"{r['LA'][fc]:.2f}" for fc in FCS_LOW)+"\n")
+                # Get the correct band values
+                band_vals = r.get(col_prefix, {})
+                vals = [band_vals.get(fc, 0.0) for fc in FCS_LOW]
+                # Calculate sum value (energy sum, then dB)
+                energies = [10 ** (v / 10) for v in vals]
+                sum_val = 10 * math.log10(sum(energies)) if energies and sum(energies) > 0 else 0.0
+                f.write(r["ts"] + "," + ",".join(f"{v:.2f}" for v in vals) + f",{sum_val:.2f}\n")
         
         # Save trigger log
         trigger_csv=os.path.join(S["cur_dir"],"trigger_log.csv")

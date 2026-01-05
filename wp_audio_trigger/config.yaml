@@ -1,7 +1,7 @@
 name: "Sound Analyzer and trigger based Recorder"
 slug: "wp_audio_trigger"
 description: "MQTT based configurable sound analyzer and event recorder"
-version: "0.1.82"
+version: "0.1.83"
 arch: [aarch64, armv7, armhf, amd64]
 startup: services
 init: false
