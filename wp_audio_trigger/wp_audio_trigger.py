@@ -158,7 +158,37 @@ button:hover{background:#138496}
 </div>
 
 <div class=section>
-  <div class=section-title>Audio trigger settings</div>
+    <div class=section-title>Audio trigger settings</div>
+<div class=section>
+    <div class=section-title>Recorded signal settings</div>
+    <div style="margin-bottom:10px">Please select all sensor signals to be recorded next to the sound signals.</div>
+    <div class=row>
+        <span class=field-label>Sensors</span>
+        <select id="sensorDropdown" multiple style="min-width:220px;padding:5px 8px;border:1px solid #999;font-size:13px;background:white">
+            <!-- Options will be populated by JS -->
+        </select>
+    </div>
+</div>
+// Example: List of available sensors (replace with dynamic fetch if needed)
+const availableSensors = [
+    { id: 'temperature', name: 'Temperature' },
+    { id: 'humidity', name: 'Humidity' },
+    { id: 'pressure', name: 'Pressure' },
+    { id: 'light', name: 'Light' },
+    { id: 'motion', name: 'Motion' }
+];
+
+function populateSensorDropdown(selected) {
+    const dropdown = document.getElementById('sensorDropdown');
+    dropdown.innerHTML = '';
+    availableSensors.forEach(sensor => {
+        const option = document.createElement('option');
+        option.value = sensor.id;
+        option.textContent = sensor.name;
+        if (selected && selected.includes(sensor.id)) option.selected = true;
+        dropdown.appendChild(option);
+    });
+}
   <div class=trigger-grid class=header>
     <span></span>
     <span>Frequency [Hz]</span>
@@ -332,6 +362,8 @@ function updateFrequencyDropdowns(){
 
 // Load configuration
 fetch('api/config').then(r=>r.json()).then(data=>{
+    // Populate sensor dropdown with selected sensors
+    populateSensorDropdown(data.selected_sensors || []);
   document.getElementById('minFreq').value=data.minFreq||31.5;
   document.getElementById('maxFreq').value=data.maxFreq||20000;
   document.getElementById('publishInterval').value=data.publishInterval||1;
@@ -380,7 +412,11 @@ fetch('api/config').then(r=>r.json()).then(data=>{
 }).catch(e=>console.error('Load error:',e));
 
 function saveConfig(){
-  const config={
+    // Get selected sensors from dropdown
+    const sensorDropdown = document.getElementById('sensorDropdown');
+    const selectedSensors = Array.from(sensorDropdown.selectedOptions).map(opt => opt.value);
+
+    const config={
     bands:document.getElementById('b1oct').checked?'1octave':document.getElementById('b2oct').checked?'2octave':'3octave',
     minFreq:parseFloat(document.getElementById('minFreq').value),
     maxFreq:parseFloat(document.getElementById('maxFreq').value),
@@ -413,7 +449,8 @@ function saveConfig(){
             cal4000:document.getElementById('cal4000').value,
             cal8000:document.getElementById('cal8000').value,
             cal16000:document.getElementById('cal16000').value
-        }
+        },
+    selected_sensors: selectedSensors
   };
   
   fetch('api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(config)})
@@ -686,7 +723,8 @@ def main():
         "storageLocation": "/media/wp_audio/events",
         "preBuffer": 10,
         "recLength": 30,
-        "calibration": {"cal31_5": 0, "cal63": 0, "cal125": 0, "cal250": 0, "cal500": 0, "cal1000": 0, "cal2000": 0, "cal4000": 0, "cal8000": 0, "cal16000": 0}
+        "calibration": {"cal31_5": 0, "cal63": 0, "cal125": 0, "cal250": 0, "cal500": 0, "cal1000": 0, "cal2000": 0, "cal4000": 0, "cal8000": 0, "cal16000": 0},
+        "selected_sensors": []
     }
     
     # Load from persistent file if exists

@@ -1,7 +1,7 @@
 name: "Sound Analyzer and trigger based Recorder"
 slug: "wp_audio_trigger"
 description: "MQTT based configurable sound analyzer and event recorder"
-version: "0.1.85"
+version: "0.1.86"
 arch: [aarch64, armv7, armhf, amd64]
 startup: services
 init: false
@@ -32,6 +32,9 @@ options:
   pulse_source: "alsa_input.usb-BEHRINGER_UMC202HD_192k-00.HiFi__Mic1__source"
   pulse_volume: 100
 
+  # List of selected sensors to record
+  selected_sensors: []
+
 schema:
   mqtt_host: str
   mqtt_port: int
@@ -44,4 +47,7 @@ schema:
   ui_port: int
   pulse_source: str
   pulse_volume: int
+
+  # List of selected sensors to record
+  selected_sensors: list
 
