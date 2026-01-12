@@ -8,6 +8,7 @@
       "slug": "wp_audio_trigger",
       "url": "https://github.com/granmeloco/HA-Sound-Analyzer-Add-on",
       "directory": "wp_audio_trigger",
+      "version": "0.1.87",
       "arch": ["aarch64","armv7","armhf","amd64"]
     }
   }
