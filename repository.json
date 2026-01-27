@@ -1,5 +1,5 @@
 {
-  "name": "HA Audio Analyzer Add-on",
+  "name": "Sound Analyzer and trigger based Recorder",
   "description": "MQTT based configurable sound analyzer and event recorder for Home Assistant.",
   "url": "https://github.com/granmeloco/ha-audio-analyzer-add-on",
   "maintainer": "granmeloco"
