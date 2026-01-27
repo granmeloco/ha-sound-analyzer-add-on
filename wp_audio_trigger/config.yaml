@@ -1,8 +1,8 @@
 name: "Sound Analyzer and trigger based Recorder"
 slug: "wp_audio_trigger"
 description: "MQTT based configurable sound analyzer and event recorder"
-version: "0.1.93"
-url: "https://github.com/granmeloco/HA-Sound-Analyzer-Add-on"
+version: "0.1.94"
+url: "https://github.com/granmeloco/ha-audio-analyzer-add-on"
 arch: [aarch64, armv7, armhf, amd64]
 startup: services
 init: false
