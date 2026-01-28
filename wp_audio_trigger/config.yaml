@@ -1,7 +1,7 @@
 name: "Sound Analyzer and trigger based Recorder"
 slug: "wp_audio_trigger"
 description: "MQTT based configurable sound analyzer and event recorder"
-version: "1.0.1"
+version: "1.89.1"
 url: "https://github.com/granmeloco/ha-audio-analyzer-add-on"
 arch: [aarch64, armv7, armhf, amd64]
 startup: services
@@ -9,9 +9,9 @@ init: false
 audio: true
 map:
   - media:rw
-# homeassistant_api: true
-# hassio_api: true
-# hassio_role: admin
+homeassistant_api: true
+hassio_api: true
+hassio_role: admin
 ingress: true
 ingress_port: 8099
 panel_icon: mdi:waveform
@@ -50,5 +50,5 @@ schema:
   pulse_volume: int
 
   # List of selected sensors to record
-  selected_sensors: list
+  selected_sensors: list(str)
 
