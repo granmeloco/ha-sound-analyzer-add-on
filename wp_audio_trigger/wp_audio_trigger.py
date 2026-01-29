@@ -868,15 +868,15 @@ def main():
         # Apply calibration offsets from UI config
         for freq_key, offset_str in calibration.items():
             try:
-                # Support decimal keys like cal31_5 -> 31.5
+                # Support decimal keys like cal31_5 -> 31.5, and comma/point decimal
                 key = freq_key.replace("cal", "").replace("_", ".")
-                freq = float(key)
-                offset = float(offset_str) if offset_str else 0.0
+                freq = float(key.replace(",", "."))
+                offset = float(str(offset_str).replace(",", ".")) if offset_str else 0.0
                 if offset != 0.0:
                     band_corr[freq] = band_corr.get(freq, 0.0) + offset
                     print(f"[wp-audio] Calibration: {freq} Hz += {offset:.2f} dB", flush=True)
             except Exception as e:
-                print(f"[wp-audio] WARNING: invalid calibration entry {freq_key}={offset_str}: {e}", flush=True)
+                print(f"[wp-audio] WARNING: invalid calibration entry {freq_key}={offset_str}: ignored ({e})", flush=True)
     
     def spl_db(rms): return 20.0*np.log10(max(rms,1e-20)/20e-6)+cal_off
 
