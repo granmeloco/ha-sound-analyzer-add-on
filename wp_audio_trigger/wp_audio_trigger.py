@@ -60,9 +60,11 @@ def load_cal(path):
         band = {}
         for k, v in d.get("band_corr_db", {}).items():
             try:
-                band[float(str(k).replace(",","."))] = float(str(v).replace(",","."))
+                kf = float(str(k).replace(",","."))
+                vf = float(str(v).replace(",","."))
+                band[kf] = vf
             except Exception:
-                print(f"[wp-audio] WARNING: invalid calibration entry {k}={v}: could not convert to float")
+                print(f"[wp-audio] WARNING: invalid calibration entry {k}={v}: ignored (must be a number, dot or comma allowed)")
         print(f"[wp-audio] Kalibrierung: offset_db={off} band_corr={band}")
     except Exception:
         print(f"[wp-audio] Keine/ungültige Kalibrierdatei: {path} (verwende 0 dB)")
