@@ -1,7 +1,7 @@
 name: "Sound Analyzer and trigger based Recorder"
 slug: "wp_audio_trigger"
 description: "MQTT based configurable sound analyzer and event recorder"
-version: "1.89.2"
+version: "1.0.91"
 url: "https://github.com/granmeloco/ha-audio-analyzer-add-on"
 arch: [aarch64, armv7, armhf, amd64]
 startup: services
@@ -20,7 +20,6 @@ ports:
 ports_description:
   8099/tcp: Web UI and API access
 
-options:
   mqtt_host: "core-mosquitto"
   mqtt_port: 1883
   mqtt_user: ""
@@ -34,7 +33,7 @@ options:
   pulse_volume: 100
 
   # List of selected sensors to record
-  # (no default value)
+  selected_sensors: []
 
 schema:
   mqtt_host: str
