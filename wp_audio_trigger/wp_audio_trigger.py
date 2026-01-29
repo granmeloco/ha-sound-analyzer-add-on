@@ -737,6 +737,12 @@ def main():
             with open(config_file, "r") as f:
                 saved_config = json.load(f)
                 analyzer_config.update(saved_config)
+                # Parse selected_sensors as comma-separated string if needed
+                sel = analyzer_config.get("selected_sensors", [])
+                if isinstance(sel, str):
+                    analyzer_config["selected_sensors"] = [s.strip() for s in sel.split(",") if s.strip()]
+                elif not isinstance(sel, list):
+                    analyzer_config["selected_sensors"] = []
                 print(f"[wp-audio] Analyzer configuration loaded: {analyzer_config['bands']} bands, {len(analyzer_config['triggers'])} triggers, logic={analyzer_config['logic']}", flush=True)
         except Exception as e:
             print(f"[wp-audio] Error loading analyzer config: {e}", flush=True)
